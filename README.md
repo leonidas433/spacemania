@@ -218,6 +218,8 @@ SpaceMania es un juego original.
 Inspirado en la mecánica clásica de shooters arcade de los años 80.  
 Ningún asset, nombre ni código extraído de títulos con copyright.
 
+**Clasificación por edades:** autodeclaración del autor, apto para todas las edades. Sin compras, sin publicidad, sin datos personales. No es un rating PEGI/IARC oficial: IARC solo emite ratings a través de tiendas participantes (Microsoft Store, Google Play, Epic...), no para webs propias.
+
 ---
 
 *retro-game-mania project · 2026*

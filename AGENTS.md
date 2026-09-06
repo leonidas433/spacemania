@@ -100,7 +100,7 @@ Background fill → stars (back layer → front layer) → player movement + bur
 
 `plan-de-mejoras.md` (v2.x, 38 findings) and `spacemania-plan/` (v3.0, 7 docs) are both **fully implemented** as of v3.0.0. The only remaining item is non-code:
 
-- **F30** — Official IARC/PEGI certification: the footer has a "PEGI 3" placeholder badge but the game hasn't been registered at globalratings.com (~10 min, free). Required before public European deploy.
+- **F30** — Age rating: the footer shows a self-declared "APTO PARA TODAS LAS EDADES" badge (never use the PEGI logo without a licence). An official IARC rating is only obtainable through a participating storefront (Microsoft Store as PWA, Google Play as TWA); the IARC questionnaire is not available directly to developers. See the IARC options in `spacemania-plan/08-PLAYTEST-BALANCE-2026-09-06.md` history / session notes.
 
 `reporte-auditoria.md` has the full audit with severity ratings for all findings.
 
