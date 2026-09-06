@@ -811,16 +811,11 @@ function showComboAnnounce(n){
 function spawnTutorialWave(){
   isTutorialWave=true; tutorialKills=0;
   const spacing=100, startX=W/2-spacing;
+  // Misma fábrica que las oleadas normales (size, special, age...): la colisión usa e.size
   [0,1,2].forEach(i=>{
-    enemies.push({
-      x:startX+i*spacing, y:100,
-      bx:startX+i*spacing, by:100,
-      shape:'phone', color:'#4af',
-      pts:0, pattern:'horizontal', alive:true,
-      t:Math.random()*Math.PI*2, row:0, col:i,
-      speed:0.4, phase:i*0.5,
-      shootTimer:999999, ebullets:[]
-    });
+    const e=makeEnemy(WAVES[0],startX+i*spacing,100,0,i);
+    e.pts=0; e.speed=0.4; e.phase=i*0.5; e.shootTimer=999999;
+    enemies.push(e);
   });
   document.getElementById('wave-name').textContent='TUTORIAL';
   const tip=document.getElementById('tutorial-hint');
