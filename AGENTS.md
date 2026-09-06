@@ -24,15 +24,14 @@ No compilation step. Edits to `index.html` are visible on browser refresh.
 
 ## Deploy
 
-The file is served as a static asset from the VPS via nginx:
+Production URL: **https://webdoctor.es/spacemania/** (deployed 2026-09-06). The file is served as a plain static asset from the Plesk vhost of webdoctor.es, no nginx directive needed (Plesk already sends `Cache-Control: no-cache` for HTML):
 
-```nginx
-location /spacemania {
-    alias /var/www/retro-game-mania/spacemania;
-    index index.html;
-    add_header Cache-Control "no-cache";
-}
 ```
+scp index.html claudedev@82.223.151.120:/home/claudedev/spacemania-index.html
+ssh claudedev@82.223.151.120 'sudo cp /home/claudedev/spacemania-index.html /var/www/vhosts/webdoctor.es/httpdocs/spacemania/index.html && sudo chown claudedev:claudedev /var/www/vhosts/webdoctor.es/httpdocs/spacemania/index.html && rm /home/claudedev/spacemania-index.html'
+```
+
+Never scp directly into httpdocs (fails on existing files). Verify with `curl -s https://webdoctor.es/spacemania/ | grep "Versión:"`.
 
 ## Architecture
 

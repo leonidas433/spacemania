@@ -173,13 +173,9 @@ retro-game-mania/
 
 ## 🚀 Deploy en VPS
 
-```nginx
-location /spacemania {
-    alias /var/www/retro-game-mania/spacemania;
-    index index.html;
-    add_header Cache-Control "no-cache";
-}
-```
+URL de producción: **https://webdoctor.es/spacemania/**
+
+Archivo estático dentro del vhost Plesk de webdoctor.es (`/var/www/vhosts/webdoctor.es/httpdocs/spacemania/index.html`). Sin nginx propio. Deploy: `scp` a `/home/claudedev/` y `sudo cp` al destino (nunca scp directo a httpdocs).
 
 ---
 
