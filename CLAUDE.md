@@ -103,7 +103,13 @@ Background fill → stars (back layer → front layer) → player movement + bur
 
 - **F30** — Age rating: the footer shows a self-declared "APTO PARA TODAS LAS EDADES" badge (never use the PEGI logo without a licence). An official IARC rating is only obtainable through a participating storefront (Microsoft Store as PWA, Google Play as TWA); the IARC questionnaire is not available directly to developers. See the IARC options in `spacemania-plan/08-PLAYTEST-BALANCE-2026-09-06.md` history / session notes.
 
-`reporte-auditoria.md` has the full audit with severity ratings for all findings.
+`reporte-auditoria.md` and `plan-de-mejoras.md` are **historical**: they describe v2.1 and are kept for traceability only. The current state of the project is `README.md` plus this file; the current plans live in `spacemania-plan/`.
+
+## Tests
+
+`npm test` runs `tests/run.mjs`: six suites, 85 checks, about twelve seconds, non-zero exit on failure. GitHub Actions runs them on every push (`.github/workflows/ci.yml`). Add a check to the matching suite whenever you change behaviour; `tests/README.md` documents each one. `tests/tools/` holds the balance bot and the refresh-rate probe, which are manual because they take minutes.
+
+The `syntax` suite guards three architecture invariants and will fail loudly if they are broken: the renderer stays Canvas 2D with no WebGL, there are no external dependencies, and the hot arrays are never rebuilt per frame.
 
 ## Key constraints
 

@@ -1,4 +1,9 @@
 # SpaceMania — Plan de Mejoras
+
+> **Documento histórico.** Refleja el estado de la versión auditada, no el actual.
+> El estado vigente está en `README.md` y en `CLAUDE.md`. Los hallazgos de este
+> informe están resueltos salvo lo que indique el plan correspondiente.
+
 **Basado en:** Auditoría GameDev v2.1.0 · 2026-05-31  
 **Versión objetivo:** 3.0.0  
 **Criterio de priorización:** P0 blocker → P1 high → P2 medium → P3 low  

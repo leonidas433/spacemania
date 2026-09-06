@@ -1,0 +1,16 @@
+{
+  "name": "spacemania",
+  "version": "3.2.0",
+  "private": true,
+  "description": "SpaceMania — arcade shooter HTML5 de un solo archivo. Este package.json existe solo para las pruebas; el juego no tiene dependencias ni build.",
+  "license": "MIT",
+  "type": "module",
+  "scripts": {
+    "test": "node tests/run.mjs",
+    "test:syntax": "node tests/run.mjs syntax",
+    "serve": "node -e \"const h=require('http'),f=require('fs');h.createServer((q,s)=>{s.writeHead(200,{'Content-Type':'text/html'});s.end(f.readFileSync('index.html'))}).listen(8080,()=>console.log('http://localhost:8080'))\""
+  },
+  "devDependencies": {
+    "playwright": "1.63.0"
+  }
+}

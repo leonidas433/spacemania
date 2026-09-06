@@ -1,4 +1,9 @@
 # SpaceMania — Reporte de Auditoría GameDev
+
+> **Documento histórico.** Refleja el estado de la versión auditada, no el actual.
+> El estado vigente está en `README.md` y en `CLAUDE.md`. Los hallazgos de este
+> informe están resueltos salvo lo que indique el plan correspondiente.
+
 **Versión auditada:** 2.1.0  
 **Fecha:** 2026-05-31  
 **Metodología:** GameDev Auditor · 6 dimensiones · ISO/IEC 25010  

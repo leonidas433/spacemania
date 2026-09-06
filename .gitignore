@@ -1,3 +1,5 @@
 .playwright-mcp/
 *.png
 *.zip
+node_modules/
+test-results/

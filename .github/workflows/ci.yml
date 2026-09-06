@@ -1,0 +1,34 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      # La comprobación de sintaxis no necesita navegador: si el archivo único
+      # no parsea, el juego entero está roto y no merece la pena seguir.
+      - name: Sintaxis del archivo único
+        run: node tests/run.mjs syntax
+
+      - name: Sintaxis de PHP
+        run: php -l counter.php
+
+      - name: Instalar dependencias
+        run: npm install --no-audit --no-fund
+
+      - name: Instalar Chromium
+        run: npx playwright install --with-deps chromium
+
+      - name: Suite completa
+        run: npm test

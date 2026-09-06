@@ -199,9 +199,26 @@ retro-game-mania/
     ├── index.html        ← juego completo (standalone, sin dependencias)
     ├── counter.php       ← contador de visitas (SEÑALES INTERCEPTADAS), mismo origen
     ├── LICENSE           ← MIT
+    ├── package.json      ← solo para las pruebas; el juego no tiene build
+    ├── tests/            ← suites Playwright + herramientas de balance
+    └── .github/workflows ← CI en cada push
     ├── README.md         ← este archivo
     └── spacemania-plan/  ← plan de diseño de la v3.0
 ```
+
+---
+
+## 🧪 Pruebas
+
+```bash
+npm install && npx playwright install chromium
+npm test
+```
+
+85 comprobaciones en seis suites: sintaxis del archivo único, tabla de puntuaciones,
+contador de visitas, tutorial, calidad adaptativa y accesibilidad, y escalado del
+lienzo. Tardan unos doce segundos y corren en cada push vía GitHub Actions.
+Detalle en `tests/README.md`.
 
 ---
 
