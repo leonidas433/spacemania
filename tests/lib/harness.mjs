@@ -1,6 +1,5 @@
 // Utilidades compartidas por las suites. Sin rutas absolutas: el mismo código
 // corre en Windows con el Chromium local y en CI con el que instala Playwright.
-import { chromium } from 'playwright';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import { dirname, resolve } from 'node:path';
 
@@ -10,8 +9,13 @@ export const GAME_FILE = resolve(ROOT, 'index.html');
 export const GAME_URL = pathToFileURL(GAME_FILE).href;
 export const LS = 'retro-game-mania.spacemania.';
 
-/** Chromium headless. CHROMIUM_PATH permite reutilizar un binario ya descargado. */
-export function launch(opts = {}) {
+/**
+ * Chromium headless. CHROMIUM_PATH permite reutilizar un binario ya descargado.
+ * Playwright se importa aquí y no arriba: así la suite `syntax` corre sin
+ * dependencias instaladas, que es lo primero que hace CI.
+ */
+export async function launch(opts = {}) {
+  const { chromium } = await import('playwright');
   return chromium.launch({
     headless: true,
     executablePath: process.env.CHROMIUM_PATH || undefined,
