@@ -1,6 +1,6 @@
 # SpaceMania 🚀
 
-**retro-game-mania · 2026 Edition · v3.1.0**
+**retro-game-mania · 2026 Edition · v3.2.0**
 
 Un shooter arcade de ciencia ficción inspirado en los clásicos de los 80.  
 Combate oleadas de objetos del mundo digital moderno en una pesadilla espacial.
@@ -19,7 +19,7 @@ Combate oleadas de objetos del mundo digital moderno en una pesadilla espacial.
 
 ---
 
-## 🛸 Mecánicas v2.0
+## 🛸 Mecánicas
 
 ### Nave — daño progresivo
 - Aguanta **3 impactos** antes de explotar
@@ -131,6 +131,38 @@ Cada tipo de enemigo derrotado se cataloga con sprite y lore. Completarla da +5%
 
 ---
 
+### Ascenso de Flota ★ (v3.2)
+- Se desbloquea al comprar **todas** las mejoras del Hangar
+- Reinicia mejoras y fragments a cero
+- A cambio, **+25% de fragments para siempre**, acumulable en cada ascenso
+- La insignia ★ aparece en el menú y en el Hangar
+- Pide confirmación: el reinicio es irreversible
+
+---
+
+## ♿ Accesibilidad
+- **Modo daltónico**: paleta alternativa para todos los elementos de juego
+- **Movimiento reducido**: desactiva temblor de pantalla, confeti, parallax y animaciones
+- **Hitbox indulgente** (v3.2): reduce el área de impacto de la nave. En CONTROLES
+- **Anuncios de voz** (v3.2): región de estado que narra escudo destruido, impactos, Ascensión, combos altos, jefes, sinergias y power-ups para lectores de pantalla
+- **Formas de bala por familia** (v3.2): cada oleada dispara una forma distinta, no solo un color distinto
+- **Remapeo** de la tecla de disparo · **Gamepad** completo · Objetivos táctiles de 44 px mínimo
+- Contraste del micro-texto por encima del mínimo AA
+
+---
+
+## ⚡ Rendimiento
+El juego apunta a 60 fps y mide su propio ritmo.
+
+- **Modo ahorro** automático en punteros gruesos, pantallas estrechas o movimiento reducido
+- Si la tasa media cae por debajo de 45 durante dos segundos, se activa solo y avisa
+- En modo ahorro: sin sombras difuminadas en el bucle caliente, menos partículas y estelas, media cadencia de estela, parallax lejano a la mitad
+- **Reservas de objetos** para balas y partículas: sin presión sobre el recolector de basura
+- Dibujado de balas agrupado por color: una conmutación de sombra por color, no por bala
+- En escritorio de alta densidad el lienzo se dibuja al doble de resolución
+
+---
+
 ## 🏅 High Scores
 - Top 20 guardado en `localStorage` del navegador, con nombre de jugador
 - Al entrar en la tabla, la pantalla de Game Over pide el nombre estilo arcade: 7 caracteres, A-Z y 0-9. Enter guarda; salir sin confirmar guarda con el último nombre usado o `---`
@@ -166,6 +198,7 @@ retro-game-mania/
 └── spacemania/
     ├── index.html        ← juego completo (standalone, sin dependencias)
     ├── counter.php       ← contador de visitas (SEÑALES INTERCEPTADAS), mismo origen
+    ├── LICENSE           ← MIT
     ├── README.md         ← este archivo
     └── spacemania-plan/  ← plan de diseño de la v3.0
 ```
@@ -209,10 +242,13 @@ Archivo estático dentro del vhost Plesk de webdoctor.es (`/var/www/vhosts/webdo
 | 2.1.0 | 2026-05-31 | Curva de dificultad progresiva por wave y ciclo |
 | 3.0.0 | 2026-09-06 | Data Fragments + Hangar, sinergias, Ascensión, near-miss, waves 9-12, 2 bosses nuevos, modificadores, Daily, Galería, juice |
 | 3.1.0 | 2026-09-06 | Balance tras playtest (economía de fragments, cadencia, Ascensión, drops, boss cada 2 ciclos) + top 20 con nombre de jugador |
+| 3.2.0 | 2026-09-07 | Calidad adaptativa y reservas de objetos, anuncios para lector de pantalla, hitbox indulgente, formas de bala enemiga, Ascenso de Flota, licencia MIT |
 
 ---
 
 ## ⚖️ Legal
+
+Licencia **MIT** (ver `LICENSE`).
 
 SpaceMania es un juego original.  
 Inspirado en la mecánica clásica de shooters arcade de los años 80.  

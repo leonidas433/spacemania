@@ -6,7 +6,7 @@ This file provides guidance to Codex (Codex.ai/code) when working with code in t
 
 SpaceMania is a single-file HTML5 canvas arcade shooter. All code — CSS, HTML, and JavaScript — lives in `index.html` (≈2030 lines). There is no build system, no package manager, and no external dependencies. The game uses the Web Audio API for all sound.
 
-**Current version:** 3.1.0 (plan in `spacemania-plan/`, fully implemented; balance pass in `spacemania-plan/08-PLAYTEST-BALANCE-2026-09-06.md`)
+**Current version:** 3.2.0. Plans in `spacemania-plan/`: balance pass in `08-PLAYTEST-BALANCE-2026-09-06.md`, audit response in `09-PLAN-AUDITORIA-v3.2.md` (both fully implemented). Licensed MIT.
 
 ## Running locally
 
@@ -85,8 +85,9 @@ All persistence uses the prefix `LS_PREFIX = 'retro-game-mania.spacemania.'`. Ke
 
 - `scores` — JSON array of top-20 `{n, s, d}` objects (name, score, ISO date); legacy numeric arrays are normalized on load by `normScores()` with name `---`. `SCORES_MAX=20`, `NAME_MAX=7`. Name entry flow: `endGame()` saves immediately with the last name used (`playername`) and sets `pendingScore={score,rank}`; `showGameOver()` renders `#name-input`; `commitPendingScore()` only renames that entry, called by `confirmName()` (Enter/GUARDAR) and by `leaveGameOver()` from any overlay/`startGame()`. `clearFragAnim()` stays side-effect free. The global keydown/keyup handlers ignore events whose target is an INPUT
 - `achievements` — JSON array of unlocked IDs
-- `colorblind`, `reducedmotion`, `keyfire`, `firstgame`
+- `colorblind`, `reducedmotion`, `keyfire`, `firstgame`, `mercy` (v3.2 forgiving hitbox)
 - v3.0: `fragments` (number), `upgrades` (object id→level), `stats` (lifetime counters), `threats` (array of shapes seen), `ascension_seen`, `challenge`, `daily_done` (seed of the day), `daily_scores` (`{seed, arr}`)
+- v3.2: `prestige` (number) — Fleet Ascension count. Multiplies fragments by `1+0.25*prestige` in both `calcRunFragments()` and `fragMultiplier()`. `doPrestige()` requires `hangarMaxed()` and a prior `armPrestige()`; it wipes `upgrades` and `fragments`.
 
 `cachedBest` holds the best score in memory; only update it and localStorage when `score > cachedBest`.
 
@@ -108,9 +109,13 @@ Background fill → stars (back layer → front layer) → player movement + bur
 
 - **Do not split into multiple files.** The single-file design is intentional — the game deploys as one asset with no server-side routing.
 - **No framework, no bundler.** Keep it vanilla JS + Canvas 2D + Web Audio API.
-- **60fps is the performance target.** Avoid `shadowBlur` inside tight loops (batch it), avoid `localStorage` reads per frame, cap particles at 300.
+- **60fps is the performance target.** `LOW_FX` (see the `CALIDAD ADAPTATIVA` section) is the quality switch: true on coarse pointers, narrow screens, reduced motion, or after two seconds under 45fps. Gate every `shadowBlur` in a per-frame path behind `!LOW_FX`, and read `maxParticles()` / `maxTrails()` instead of hardcoding caps.
+- **No per-frame array rebuilds.** Bullets, particles and trails compact in place and return objects to `bulletPool` / `particlePool` / `trailPool`. Use `newBullet()` + `releaseBullet()` / `clearBullets()`, `pushParticle()` / `spawnParticles()` / `clearParticles()`. Never assign `bullets=[]` or `particles=[]` directly.
+- **Canvas transform is owned by `applyCanvasScale()`.** It sets `C.width`/`C.height` to the device pixel ratio (1 under `LOW_FX`, capped at 2) and installs the base transform. Nothing else may call `setTransform` on the main context.
 - When adding new wave or boss data, follow the existing object shape in `WAVES[]` / `BOSS_PHASES[]` — the spawn functions read properties by name. Waves per cycle = `WAVE_COUNT` (12); never hardcode `% 8`.
 - Floating feedback text uses `addFloat(x, y, text, color)` — prefer this over new DOM elements for in-game events.
 - All enemy kills must go through `killEnemy(e, {cause})` and all scoring through `addScore(base, withCombo)` so modifiers, daily rules, gallery and mini-frags stay consistent.
 - New synergies: add an entry to `SYNERGIES` with the sorted key and read `activeSynergy` where the behaviour lives. Do not store per-synergy state elsewhere.
 - Screen flash and confetti respect `reducedMotion`; keep it that way.
+- Any event whose only feedback is audio must also call `announce(text)`, which writes to the `#sr-live` status region (throttled to one message per 700ms, duplicates dropped within 2.5s).
+- The player hitbox is `mercyHitbox ? 7x6 : 10x8`. Enemy bullet silhouettes come from `EBULLET_SHAPE[waveShape]` and are drawn by `drawEBullet()`; shape, not just colour, must distinguish a wave's projectile.
