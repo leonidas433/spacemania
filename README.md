@@ -1,6 +1,6 @@
 # SpaceMania 🚀
 
-**retro-game-mania · 2026 Edition · v2.0.0**
+**retro-game-mania · 2026 Edition · v3.0.0**
 
 Un shooter arcade de ciencia ficción inspirado en los clásicos de los 80.  
 Combate oleadas de objetos del mundo digital moderno en una pesadilla espacial.
@@ -35,17 +35,66 @@ Combate oleadas de objetos del mundo digital moderno en una pesadilla espacial.
 - Absorbe **4 impactos** · HUD muestra pips: azul → naranja → rojo → destruido
 
 ### Power-ups ⚡
-Caen de forma aleatoria durante el juego (máx. 2 activos simultáneos):
+Caen de forma aleatoria durante el juego (máx. 2 activos; al coger un tercero se sustituye el más antiguo):
 
 | Power-up | Efecto | Duración |
 |---|---|---|
 | `x2` Doble disparo | Dispara 2 balas simultáneas | ~10 seg |
 | `>>` Velocidad | Nave un 90% más rápida | ~8 seg |
 | `⟳` Misil guiado | Bala sigue al enemigo más cercano | ~7 seg |
+| `⇈` Perforante | Las balas atraviesan 1 enemigo extra | ~9 seg |
+| `⁂` Ráfaga | Abanico automático de 3 balas cada 1.5 s | ~8 seg |
+
+### Sinergias 🔗 (v3.0)
+Dos power-ups activos a la vez crean una sinergia con efecto propio, anuncio y aura:
+
+| Combinación | Sinergia | Efecto |
+|---|---|---|
+| x2 + Guiado | Barrage Guiado | Dos misiles, dos objetivos. Con uno solo: +25% daño |
+| Velocidad + x2 | Ráfaga de Asalto | Balas extra automáticas al moverte rápido |
+| Velocidad + Guiado | Cazador de Élite | Misil más ágil que explota al impactar |
+| x2 + Perforante | Lluvia Perforante | Las dos balas perforan 2 enemigos |
+| Guiado + Perforante | Lancero Digital | El misil perfora y vuelve a buscar objetivo |
+| Velocidad + Ráfaga | Tormenta Móvil | El abanico dispara el doble de rápido en movimiento |
+| Ráfaga + x2 | Muro de Fuego | Abanico de 5 balas |
+| Ráfaga + Guiado | Enjambre | Las balas del abanico persiguen |
+| Ráfaga + Perforante | Metralla | El abanico perfora |
+| Perforante + Velocidad | Aguja | Balas más rápidas y +1 perforación |
+
+**Overclock Total:** Ascensión activa + sinergia = 5 s de disparo triple guiado que rebota en los bordes.
+
+### Ascensión ✦ (v3.0)
+La barra morada bajo la energía se llena con kills, combos y esquivas. Al llenarse: **10 s de Modo Ascensión** con disparo automático, aura que destruye enemigos cercanos y drenaje de energía a la mitad. Cada ciclo cuesta más llenarla.
+
+### Near-miss 💨 (v3.0)
+Una bala enemiga que pasa rozando la nave sin tocarla da +5-15 puntos, un flash y carga la Ascensión.
+
+### Data Fragments ◈ y Hangar (v3.0)
+Al terminar cada partida ganas **Data Fragments** (mínimo 15) según score, waves, ciclos, kills, bosses y combo máximo. También caen mini-fragments al matar. Se gastan en el **Hangar** en mejoras permanentes:
+
+| Mejora | Coste base | Efecto | Máx |
+|---|---|---|---|
+| Casco Reforzado | 80 | +1 HP máximo de nave | 2 |
+| Reactor Eficiente | 60 | Energía se drena 12% más lento | 3 |
+| Colector de Datos | 50 | Los drops caen más cerca de ti | 2 |
+| Estabilizador de Combo | 70 | El combo dura +0.6 s | 3 |
+| Escudo de Emergencia | 120 | Empiezas con 1 pip de escudo | 1 |
+| Analizador | 90 | +15% fragments | 2 |
+| Vida de Reserva | 200 | +1 vida al empezar | 1 |
+
+### Modificadores de run ⚠ (v3.0)
+25% de las partidas (100% con **Modo Desafío**) llevan un modificador con compensación en puntos: Gravity Flux, Overclocked Enemies, Sparse Drops, Glass Cannon o Data Rain.
+
+### Daily Challenge 📅 (v3.0)
+Cada día un desafío fijo generado por fecha (solo guiado, enemigos +40%, una vida, combo o nada, wave especial). Llegar al ciclo 2 da +100 fragments una vez al día. Top 5 local del día.
+
+### Galería de Amenazas 📚 (v3.0)
+Cada tipo de enemigo derrotado se cataloga con sprite y lore. Completarla da +5% fragments permanente.
 
 ### Boss Wave 👾
 - Aparece **cada 3 ciclos** al inicio del ciclo
-- 3 fases progresivas: Mega Smartphone → Crypto Titan → AI Overlord
+- 5 fases progresivas: Mega Smartphone → Crypto Titan → AI Overlord → Shadowban Phantom (se desvanece y teleporta) → Quantum Algorithm (se divide al 50%)
+- Telegraph: los ojos se iluminan 0.6 s antes de disparar, con aviso sonoro · 2 s de gracia al aparecer
 - HP propio con barra visual · dispara en abanico
 - Patrones de movimiento únicos por fase
 - Recompensa masiva de puntos
@@ -89,7 +138,7 @@ Caen de forma aleatoria durante el juego (máx. 2 activos simultáneos):
 
 ---
 
-## 👾 Los 8 Enemigos
+## 👾 Los 12 Enemigos
 
 | Wave | Enemigo | Patrón |
 |---|---|---|
@@ -101,6 +150,10 @@ Caen de forma aleatoria durante el juego (máx. 2 activos simultáneos):
 | 6 | Drones | Swooping |
 | 7 | NFTs | Zigzag |
 | 8 | Algoritmos | Chaos |
+| 9 | Deepfakes | Mirror · se duplican al morir |
+| 10 | Spam Bots | Swarm · disparan balas dobles |
+| 11 | Viral Memes | Zigzag · al morir te empujan |
+| 12 | Singularity | Chaos · crecen si no los matas |
 
 ---
 
@@ -109,8 +162,9 @@ Caen de forma aleatoria durante el juego (máx. 2 activos simultáneos):
 ```
 retro-game-mania/
 └── spacemania/
-    ├── index.html    ← juego completo (standalone, sin dependencias)
-    └── README.md     ← este archivo
+    ├── index.html        ← juego completo (standalone, sin dependencias)
+    ├── README.md         ← este archivo
+    └── spacemania-plan/  ← plan de diseño de la v3.0
 ```
 
 ---
@@ -138,10 +192,10 @@ location /spacemania {
 - [x] Dificultad seleccionable
 - [x] Combo multiplier
 - [ ] Leaderboard global (backend)
-- [ ] Retos diarios
+- [x] Retos diarios
 - [ ] Modo 2 jugadores
-- [ ] Animaciones de boss death más elaboradas
-- [ ] Sistema de niveles / progresión persistente
+- [x] Animaciones de boss death más elaboradas
+- [x] Sistema de niveles / progresión persistente (Data Fragments + Hangar)
 
 ---
 
@@ -151,6 +205,8 @@ location /spacemania {
 |---|---|---|
 | 1.0.0 | 2026-05-30 | Versión inicial — nave, escudo, 8 oleadas |
 | 2.0.0 | 2026-05-31 | Audio, Boss, Power-ups, HiScores, FX, Pausa, Dificultad, Combo |
+| 2.1.0 | 2026-05-31 | Curva de dificultad progresiva por wave y ciclo |
+| 3.0.0 | 2026-09-06 | Data Fragments + Hangar, sinergias, Ascensión, near-miss, waves 9-12, 2 bosses nuevos, modificadores, Daily, Galería, juice |
 
 ---
 
