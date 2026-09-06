@@ -165,6 +165,7 @@ Cada tipo de enemigo derrotado se cataloga con sprite y lore. Completarla da +5%
 retro-game-mania/
 └── spacemania/
     ├── index.html        ← juego completo (standalone, sin dependencias)
+    ├── counter.php       ← contador de visitas (SEÑALES INTERCEPTADAS), mismo origen
     ├── README.md         ← este archivo
     └── spacemania-plan/  ← plan de diseño de la v3.0
 ```
@@ -176,6 +177,8 @@ retro-game-mania/
 URL de producción: **https://webdoctor.es/spacemania/**
 
 Archivo estático dentro del vhost Plesk de webdoctor.es (`/var/www/vhosts/webdoctor.es/httpdocs/spacemania/index.html`). Sin nginx propio. Deploy: `scp` a `/home/claudedev/` y `sudo cp` al destino (nunca scp directo a httpdocs).
+
+**Contador de visitas:** `counter.php` (PHP 8.3 del vhost) guarda el total en `/var/www/vhosts/webdoctor.es/spacemania-data/visits.json`, fuera de httpdocs, propietario `webdoctor.es_7w8mt7nd43i:psaserv`. Cuenta una visita por sesión (cookie `sm_v` de 30 min) y solo peticiones same-origin del propio juego. No guarda IPs ni datos personales. En `file://` o si el endpoint falla, el panel no se muestra.
 
 ---
 

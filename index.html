@@ -75,6 +75,15 @@ canvas{display:block;width:100%;cursor:none;}
 #scores-table tr.hi td{color:#ff6;}
 
 footer.credits{margin-top:10px;font-size:9px;color:#1a1a3a;letter-spacing:1px;text-align:center;}
+#visits{display:none;justify-content:center;align-items:center;gap:8px;margin-top:8px;font-size:8px;letter-spacing:2px;color:#2a4a6a;}
+#visits.on{display:flex;}
+#visits .odo{display:flex;gap:2px;}
+#visits .odo span{display:inline-block;width:11px;height:15px;line-height:15px;text-align:center;font-size:11px;font-weight:bold;color:#4af;background:#070a1a;border:1px solid #1a2a4a;border-radius:2px;text-shadow:0 0 6px rgba(68,170,255,.6);}
+#visits .odo span.spin{animation:odoFlicker .08s steps(1) infinite;}
+@keyframes odoFlicker{50%{color:#8cf;border-color:#2a4a7a;}}
+#visits .dot{width:5px;height:5px;border-radius:50%;background:#4af;box-shadow:0 0 6px #4af;animation:blip 1.6s infinite;}
+body.rm #visits .dot,body.rm #visits .odo span.spin{animation:none;}
+@keyframes blip{0%,100%{opacity:.25}50%{opacity:1}}
 /* F01 */
 #energy-tooltip{position:absolute;top:4px;left:50%;transform:translateX(-50%);background:rgba(0,0,0,0.7);color:#4af;font-size:10px;padding:3px 10px;border-radius:3px;opacity:0;transition:opacity 0.5s;z-index:10;pointer-events:none;white-space:nowrap;}
 /* F02 */
@@ -256,6 +265,7 @@ body.rm *{animation:none!important;}
   </div>
 </div>
 <footer class="credits">SPACEMANIA · retro-game-mania · 2026 · inspired by classic arcade shooters<span style="border:1px solid #334;padding:1px 5px;font-size:8px;color:#446;border-radius:2px;margin-left:8px;">PEGI 3</span></footer>
+<div id="visits" aria-live="polite"><span class="dot"></span><span>SEÑALES INTERCEPTADAS</span><span class="odo" id="visits-odo"></span></div>
 
 <script>
 const LS_PREFIX='retro-game-mania.spacemania.';
@@ -2408,6 +2418,37 @@ C.addEventListener('touchmove',e=>{
 },{passive:false});
 C.addEventListener('touchstart',e=>{ resumeAC(); if(state==='playing'&&!paused&&!playerExploding) fireBullet(); },{passive:true});
 
+// ── CONTADOR DE VISITAS ("SEÑALES INTERCEPTADAS") ─────────────
+// counter.php (mismo origen) devuelve {total}. En file:// o si falla, el panel no se muestra.
+const VISITS_DIGITS=7;
+function showVisits(total){
+  const box=document.getElementById('visits'), odo=document.getElementById('visits-odo');
+  const target=String(Math.max(0,total|0)).padStart(VISITS_DIGITS,'0').slice(-VISITS_DIGITS);
+  odo.innerHTML=target.split('').map(()=>'<span>0</span>').join('');
+  const cells=[...odo.children];
+  box.classList.add('on');
+  if(reducedMotion){ cells.forEach((c,i)=>c.textContent=target[i]); return; }
+  cells.forEach(c=>c.classList.add('spin'));
+  const t0=performance.now(), dur=1100;
+  (function tick(now){
+    const p=Math.min(1,(now-t0)/dur);
+    cells.forEach((c,i)=>{
+      const settleAt=0.35+0.65*(i/VISITS_DIGITS);           // los dígitos de la izquierda se fijan antes
+      if(p>=settleAt){ c.textContent=target[i]; c.classList.remove('spin'); }
+      else c.textContent=String(Math.floor(Math.random()*10));
+    });
+    if(p<1) requestAnimationFrame(tick);
+    else if(AC.state==='running') playTone(1320,'sine',0.06,0.05);
+  })(t0);
+}
+function loadVisits(){
+  if(location.protocol==='file:') return;
+  fetch('counter.php',{credentials:'same-origin',cache:'no-store'})
+    .then(r=>r.ok?r.json():null)
+    .then(d=>{ if(d&&typeof d.total==='number') showVisits(d.total); })
+    .catch(()=>{});
+}
+
 // ── INIT ─────────────────────────────────────────────────────
 document.getElementById('btn-left').addEventListener('touchstart',e=>{ e.preventDefault(); keys['ArrowLeft']=true; },{passive:false});
 document.getElementById('btn-left').addEventListener('touchend',()=>{ delete keys['ArrowLeft']; });
@@ -2420,6 +2461,7 @@ document.body.classList.toggle('rm',reducedMotion);
 initBest();
 updateFragHUD();
 showMenu();
+loadVisits();
 loop();
 </script>
 </body>

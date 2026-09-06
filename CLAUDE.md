@@ -33,6 +33,8 @@ ssh claudedev@82.223.151.120 'sudo cp /home/claudedev/spacemania-index.html /var
 
 Never scp directly into httpdocs (fails on existing files). Verify with `curl -s https://webdoctor.es/spacemania/ | grep "Versión:"`.
 
+**Visit counter:** `counter.php` (same directory, PHP 8.3 of the vhost) increments `/var/www/vhosts/webdoctor.es/spacemania-data/visits.json` (outside httpdocs, owner `webdoctor.es_7w8mt7nd43i:psaserv`, `flock`). Counts one visit per session (`sm_v` cookie, 30 min) and only same-origin `fetch` requests (`Sec-Fetch-Site: same-origin`). No IPs, no logs. The client (`loadVisits()`/`showVisits()` in the `CONTADOR DE VISITAS` section) renders the "SEÑALES INTERCEPTADAS" odometer under the footer; it stays hidden on `file://` or when the endpoint fails, and skips the spin animation under `reducedMotion`. Deploy `counter.php` with the same scp + sudo cp flow.
+
 ## Architecture
 
 ### Single-file structure
