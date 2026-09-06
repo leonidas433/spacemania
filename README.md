@@ -1,6 +1,6 @@
 # SpaceMania 🚀
 
-**retro-game-mania · 2026 Edition · v3.0.0**
+**retro-game-mania · 2026 Edition · v3.1.0**
 
 Un shooter arcade de ciencia ficción inspirado en los clásicos de los 80.  
 Combate oleadas de objetos del mundo digital moderno en una pesadilla espacial.
@@ -92,7 +92,7 @@ Cada día un desafío fijo generado por fecha (solo guiado, enemigos +40%, una v
 Cada tipo de enemigo derrotado se cataloga con sprite y lore. Completarla da +5% fragments permanente.
 
 ### Boss Wave 👾
-- Aparece **cada 3 ciclos** al inicio del ciclo
+- Aparece **cada 2 ciclos** al inicio del ciclo (v3.1; antes cada 3)
 - 5 fases progresivas: Mega Smartphone → Crypto Titan → AI Overlord → Shadowban Phantom (se desvanece y teleporta) → Quantum Algorithm (se divide al 50%)
 - Telegraph: los ojos se iluminan 0.6 s antes de disparar, con aviso sonoro · 2 s de gracia al aparecer
 - HP propio con barra visual · dispara en abanico
@@ -132,7 +132,9 @@ Cada tipo de enemigo derrotado se cataloga con sprite y lore. Completarla da +5%
 ---
 
 ## 🏅 High Scores
-- Top 10 guardado en `localStorage` del navegador
+- Top 20 guardado en `localStorage` del navegador, con nombre de jugador
+- Al entrar en la tabla, la pantalla de Game Over pide el nombre estilo arcade: 7 caracteres, A-Z y 0-9. Enter guarda; salir sin confirmar guarda con el último nombre usado o `---`
+- El top 5 del Daily Challenge sigue siendo solo numérico (sin nombre)
 - Persistente entre sesiones
 - Visible en el menú principal y pantalla de game over
 
@@ -184,9 +186,9 @@ location /spacemania {
 ## 📋 Roadmap
 
 - [x] Sonido — Web Audio API
-- [x] Boss wave cada 3 ciclos
+- [x] Boss wave cada 2 ciclos
 - [x] Power-ups (doble, velocidad, guiado)
-- [x] High scores localStorage
+- [x] High scores localStorage (top 20 con nombre)
 - [x] Screen shake + trails
 - [x] Pausa con ESC
 - [x] Dificultad seleccionable
@@ -207,6 +209,7 @@ location /spacemania {
 | 2.0.0 | 2026-05-31 | Audio, Boss, Power-ups, HiScores, FX, Pausa, Dificultad, Combo |
 | 2.1.0 | 2026-05-31 | Curva de dificultad progresiva por wave y ciclo |
 | 3.0.0 | 2026-09-06 | Data Fragments + Hangar, sinergias, Ascensión, near-miss, waves 9-12, 2 bosses nuevos, modificadores, Daily, Galería, juice |
+| 3.1.0 | 2026-09-06 | Balance tras playtest (economía de fragments, cadencia, Ascensión, drops, boss cada 2 ciclos) + top 20 con nombre de jugador |
 
 ---
 

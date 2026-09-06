@@ -6,7 +6,7 @@ This file provides guidance to Codex (Codex.ai/code) when working with code in t
 
 SpaceMania is a single-file HTML5 canvas arcade shooter. All code — CSS, HTML, and JavaScript — lives in `index.html` (≈2030 lines). There is no build system, no package manager, and no external dependencies. The game uses the Web Audio API for all sound.
 
-**Current version:** 3.0.0 (plan in `spacemania-plan/`, fully implemented)
+**Current version:** 3.1.0 (plan in `spacemania-plan/`, fully implemented; balance pass in `spacemania-plan/08-PLAYTEST-BALANCE-2026-09-06.md`)
 
 ## Running locally
 
@@ -82,7 +82,7 @@ All game state is **mutable global variables** — there are no classes or modul
 
 All persistence uses the prefix `LS_PREFIX = 'retro-game-mania.spacemania.'`. Keys in use:
 
-- `scores` — JSON array of top-10 numbers
+- `scores` — JSON array of top-20 `{n, s, d}` objects (name, score, ISO date); legacy numeric arrays are normalized on load by `normScores()` with name `---`. `SCORES_MAX=20`, `NAME_MAX=7`. Name entry flow: `endGame()` saves immediately with the last name used (`playername`) and sets `pendingScore={score,rank}`; `showGameOver()` renders `#name-input`; `commitPendingScore()` only renames that entry, called by `confirmName()` (Enter/GUARDAR) and by `leaveGameOver()` from any overlay/`startGame()`. `clearFragAnim()` stays side-effect free. The global keydown/keyup handlers ignore events whose target is an INPUT
 - `achievements` — JSON array of unlocked IDs
 - `colorblind`, `reducedmotion`, `keyfire`, `firstgame`
 - v3.0: `fragments` (number), `upgrades` (object id→level), `stats` (lifetime counters), `threats` (array of shapes seen), `ascension_seen`, `challenge`, `daily_done` (seed of the day), `daily_scores` (`{seed, arr}`)

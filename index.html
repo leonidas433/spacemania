@@ -137,6 +137,14 @@ footer.credits{margin-top:10px;font-size:9px;color:#1a1a3a;letter-spacing:1px;te
 .frag-lbl{font-size:10px;color:#96c;letter-spacing:2px;}
 .go-grid{display:grid;grid-template-columns:auto auto;gap:2px 16px;font-size:10px;color:#68a;letter-spacing:1px;margin:6px 0;}
 .go-grid span:nth-child(odd){color:#446;text-align:right;}
+.name-entry{margin:8px 0 2px;display:flex;flex-direction:column;align-items:center;gap:4px;}
+.name-entry label{font-size:10px;color:#ff6;letter-spacing:2px;}
+.name-entry input{width:150px;background:#050510;border:1px solid #ff6;color:#ff6;font-family:'Courier New',monospace;font-size:18px;font-weight:bold;letter-spacing:6px;text-align:center;text-transform:uppercase;padding:6px 4px;border-radius:4px;outline:none;caret-color:#ff6;}
+.name-entry input:focus{box-shadow:0 0 10px #ff6;}
+.name-entry .hint{margin:0;}
+#scores-table td.nm{color:#8ac;letter-spacing:1px;text-align:left;}
+#scores-table tr.hi td.nm{color:#ff6;}
+.scores-scroll{max-height:150px;overflow-y:auto;border:1px solid #223;border-radius:4px;padding:2px 6px;}
 .new-record{color:#ff6;font-size:14px;font-weight:bold;letter-spacing:3px;animation:recordBlink 0.6s infinite alternate;margin:4px 0;}
 @keyframes recordBlink{from{opacity:0.5;text-shadow:none;}to{opacity:1;text-shadow:0 0 12px #ff6;}}
 .btn-row{display:flex;gap:8px;flex-wrap:wrap;justify-content:center;}
@@ -194,7 +202,7 @@ body.rm *{animation:none!important;}
       <p class="hint" style="margin-top:8px;">← → / ratón = mover &nbsp;·&nbsp; ESPACIO / clic = disparar</p>
       <p class="hint">ESC = pausa &nbsp;·&nbsp; ← → guía el disparo en vuelo</p>
       <p class="hint" style="color:#4af;margin-top:4px;">🛡 Escudo (4 impactos) &nbsp;·&nbsp; ⚡ Power-ups en juego</p>
-      <p class="hint" style="color:#f84;">👾 Boss cada 3 ciclos &nbsp;·&nbsp; 🔥 Combo multiplier activo</p>
+      <p class="hint" style="color:#f84;">👾 Boss cada 2 ciclos &nbsp;·&nbsp; 🔥 Combo multiplier activo</p>
       <p class="hint" style="margin-top:6px;">Selecciona dificultad:</p>
       <div class="diff-row">
         <button class="diff-btn easy" onclick="selectDiff('easy')">FÁCIL</button>
@@ -254,7 +262,7 @@ const LS_PREFIX='retro-game-mania.spacemania.';
 // ============================================================
 //  SpaceMania — retro-game-mania
 //  Autor: retro-game-mania project
-//  Versión: 3.0.0
+//  Versión: 3.1.0
 //  Fecha: 2026-09-06
 //  v2.1.0: curva de dificultad progresiva — velocidad y cadencia
 //          de disparo enemigo escalan por wave y ciclo
@@ -262,6 +270,8 @@ const LS_PREFIX='retro-game-mania.spacemania.';
 //          sinergias de power-ups, Ascensión, near-miss,
 //          waves 9-12, 2 bosses nuevos, modificadores de run,
 //          Daily Challenge, Galería de Amenazas, juice
+//  v3.1.0: balance tras playtest (fragments, cadencia, Ascensión,
+//          drops, boss cada 2 ciclos) + top 20 con nombre
 // ============================================================
 
 // ── CURVA DE DIFICULTAD PROGRESIVA ──────────────────────────
@@ -279,12 +289,12 @@ function enemyBulletSpeed(waveIdx, cycle, diffMult){
 }
 
 // Timer entre disparos por enemigo (frames).
-// Wave 1 Ciclo 1: ~2.5 seg entre disparos por enemigo.
+// Wave 1 Ciclo 1: ~2.3 seg entre disparos por enemigo.
 // Con 10 enemigos en pantalla = bala cada ~0.25 seg — hay tensión.
 // Mínimo absoluto: 45 frames (~0.75 seg a 60fps)
 function enemyShootTimer(waveIdx, cycle, diffShootRate){
   const waveInCycle = Math.min(waveIdx % WAVE_COUNT, 7);
-  const base    = 160;                   // frames entre disparos en wave1 ciclo1
+  const base    = 140;                   // frames entre disparos en wave1 ciclo1 (v3.1: 160 → 140)
   const perWave = 14;                    // -14 frames por wave
   const perCycle= 18;                    // -18 frames por ciclo nuevo
   const t = base - waveInCycle * perWave - (cycle - 1) * perCycle;
@@ -571,7 +581,8 @@ let ascensionSeen=lsStr('ascension_seen')==='1';
 let runFragments=0;                               // mini-fragments recogidos en la run
 let bossesKilled=0, maxComboRun=1, nearMisses=0;
 let maxShipHp=3;
-let ascension=0, ascensionMax=100, ascensionActive=false, ascensionTimer=0, ascensionsThisRun=0;
+let ascension=0, ascensionMax=130, // ver ASC_BASE (const definida más abajo; startGame recalcula)
+    _ascUnused=0, ascensionActive=false, ascensionTimer=0, ascensionsThisRun=0;
 let overclockTimer=0;
 let activeSynergy=null;                           // clave de SYNERGIES o null
 let burstTimer=0, assaultTimer=0, lastPlayerX=W/2, playerVel=0;
@@ -596,9 +607,9 @@ function updateFragHUD(){ const el=document.getElementById('frag-display'); if(e
 // Fórmula de ganancia de fragments al terminar la run (doc 02 §1).
 // Única tabla de fuentes: la suma y el desglose del Game Over salen de aquí.
 const FRAG_SOURCES=[
-  ['Score',     ()=>score/100],
+  ['Score',     ()=>score/300],
   ['Waves',     ()=>maxWaveReached*8],
-  ['Ciclos',    ()=>maxCycleReached*40],
+  ['Ciclos',    ()=>maxCycleReached*25],
   ['Kills',     ()=>totalKills*0.5],
   ['Bosses',    ()=>bossesKilled*25],
   ['Combo',     ()=>Math.max(0,maxComboRun-1)*6],
@@ -624,15 +635,46 @@ function fragmentBreakdown(){ return FRAG_SOURCES.map(r=>[r[0],Math.round(r[1]()
 
 // Scores table
 function migrateScores(){ const old=localStorage.getItem('spacemania_scores'); if(old&&!localStorage.getItem(LS_PREFIX+'scores')) localStorage.setItem(LS_PREFIX+'scores',old); }
+// Tabla de scores v3.1: top 20 de {n:nombre, s:score, d:fecha}. Formato antiguo (array de
+// números) se normaliza a nombre '---'. Solo entradas con score numérico finito sobreviven.
 // Solo números finitos: un JSON manipulado no debe romper .slice()/.sort()
 function numArr(a){ return Array.isArray(a)?a.filter(n=>typeof n==='number'&&isFinite(n)):[]; }
-function loadScores(){ try{ return numArr(JSON.parse(localStorage.getItem(LS_PREFIX+'scores')||'[]')); }catch(e){ return []; } }
-function saveScore(s){
-  let arr=loadScores(); arr.push(s); arr.sort((a,b)=>b-a); arr=arr.slice(0,10);
+const SCORES_MAX=20, NAME_MAX=7, NAME_EMPTY='---';
+function cleanName(v){ return String(v||'').toUpperCase().replace(/[^A-Z0-9]/g,'').slice(0,NAME_MAX); }
+function normScores(a){
+  if(!Array.isArray(a)) return [];
+  return a.map(e=>typeof e==='number'?{n:NAME_EMPTY,s:e,d:''}:e)
+          .filter(e=>e&&typeof e.s==='number'&&isFinite(e.s))
+          .map(e=>({n:cleanName(e.n)||NAME_EMPTY,s:e.s,d:/^\d{4}-\d{2}-\d{2}$/.test(e.d)?e.d:''}))
+          .sort((a,b)=>b.s-a.s).slice(0,SCORES_MAX);
+}
+function loadScores(){ try{ return normScores(JSON.parse(localStorage.getItem(LS_PREFIX+'scores')||'[]')); }catch(e){ return []; } }
+// Posición (0-based) que ocuparía `s` en la tabla, o -1 si no entra
+function scoreRank(s){
+  if(s<=0) return -1;
+  const arr=loadScores();
+  const i=arr.findIndex(e=>s>e.s);
+  if(i>=0) return i;
+  return arr.length<SCORES_MAX?arr.length:-1;
+}
+function saveScore(s,name){
+  let arr=loadScores();
+  arr.push({n:cleanName(name)||NAME_EMPTY,s,d:new Date().toISOString().slice(0,10)});
+  arr.sort((a,b)=>b.s-a.s); arr=arr.slice(0,SCORES_MAX);
   try{ localStorage.setItem(LS_PREFIX+'scores',JSON.stringify(arr)); }catch(e){}
   return arr;
 }
-function bestScore(){ const s=loadScores(); return s.length?s[0]:0; }
+function bestScore(){ const s=loadScores(); return s.length?s[0].s:0; }
+function scoreRow(e,i,hi){ return `<tr class="${hi?'hi':''}"><td>#${i+1}</td><td class="nm">${e.n}</td><td>${String(e.s).padStart(6,'0')}</td></tr>`; }
+function scoreRows(arr,hiIdx,limit){
+  return arr.slice(0,limit||arr.length).map((e,i)=>scoreRow(e,i,i===hiIdx)).join('');
+}
+// Game Over: top 5 y, si tu posición queda más abajo, una fila extra con ella
+function gameOverRows(arr,rank){
+  let h=scoreRows(arr,rank,5);
+  if(rank>=5&&arr[rank]) h+=`<tr><td colspan="3" style="color:#334;">···</td></tr>`+scoreRow(arr[rank],rank,true);
+  return h;
+}
 
 function initBest(){ migrateScores(); cachedBest=bestScore(); document.getElementById('sc-best').textContent=String(cachedBest).padStart(6,'0'); }
 
@@ -717,7 +759,7 @@ for(let i=0;i<18;i++) starsFront.push({x:Math.random()*W,y:Math.random()*H,s:Mat
 function resetShieldTimer(){ shieldRandomTimer=900+Math.floor(Math.random()*900); }
 function resetPowerupTimer(){
   const sparse=runModifier&&runModifier.id==='sparse_drops'?1.8:1;
-  powerupDropTimer=Math.floor((400+Math.random()*600)*sparse);
+  powerupDropTimer=Math.floor((350+Math.random()*400)*sparse);
 }
 // Upgrade "magnet": la X del drop se acerca a la nave (25% por nivel)
 function dropX(){
@@ -804,8 +846,8 @@ function spawnWave(){
 
   if(waveIdx===0&&firstGame&&!dailyMode){ spawnTutorialWave(); return; }
 
-  // Boss cada 3 ciclos
-  if(cycle>1 && cycle%3===0 && waveIdx%WAVE_COUNT===0){
+  // Boss cada 2 ciclos (v3.1: antes cada 3)
+  if(cycle>1 && cycle%2===0 && waveIdx%WAVE_COUNT===0){
     isBossWave=true;
     spawnBoss();
     return;
@@ -1398,7 +1440,11 @@ function endGame(){
   const elapsed=Math.floor((Date.now()-sessionStart)/1000);
   const m=Math.floor(elapsed/60), s=String(elapsed%60).padStart(2,'0');
   const isRecord=score>0&&score>bestScore(); // antes de guardar: ¿supera el top-1 persistido?
-  const arr=saveScore(score);
+  // Entra en el top 20: se guarda YA con el último nombre usado (cerrar la pestaña no lo pierde);
+  // el campo de nombre del Game Over solo edita esa entrada.
+  const rank=scoreRank(score);
+  pendingScore=null;
+  if(rank>=0){ saveScore(score,lsStr('playername')); pendingScore={score,rank}; }
   // Fragments + stats lifetime
   const earned=calcRunFragments()+(dailyRewarded?DAILY_REWARD:0);
   fragments+=earned; saveFragments();
@@ -1409,7 +1455,7 @@ function endGame(){
   if(dailyMode) saveDailyScore(score);
   // El Daily fija NORMAL; restaurar la dificultad que tenía el jugador antes de pintar los botones
   if(dailyMode&&_prevDifficulty){ difficulty=_prevDifficulty; _prevDifficulty=null; }
-  showGameOver(arr,`${m}:${s}`,earned,isRecord);
+  showGameOver(`${m}:${s}`,earned,isRecord);
 }
 
 // ── COMBO SYSTEM ─────────────────────────────────────────────
@@ -1549,8 +1595,8 @@ function updatePowerupHUD(){
 // La barra se llena con kills, combos y near-miss. Al llenarse: 10 s de
 // Modo Ascensión (auto-disparo, aura que daña enemigos cercanos, shake suave).
 // Cada ciclo cuesta un 20% más llenarla.
-const ASC_DURATION=600, ASC_AURA_RADIUS=120, ASC_AURA_KILL_FRAMES=75, ASC_AUTOFIRE=10;
-function ascensionThreshold(){ return 100+20*(cycle-1)+ascensionsThisRun*15; }
+const ASC_DURATION=600, ASC_AURA_RADIUS=120, ASC_AURA_KILL_FRAMES=75, ASC_AUTOFIRE=10, ASC_BASE=130;
+function ascensionThreshold(){ return ASC_BASE+20*(cycle-1)+ascensionsThisRun*15; }
 function addAscension(n){
   if(ascensionActive||isTutorialWave) return;
   ascension=Math.min(ascensionMax,ascension+n);
@@ -1917,11 +1963,42 @@ const DIFF_ROW_HTML=()=>`
 
 // ── GAME OVER v3.0 ───────────────────────────────────────────
 let _fragAnimTimer=null;
+// Entrada del top 20 ya guardada cuyo nombre aún se puede editar: {score, rank}
+let pendingScore=null;
+function commitPendingScore(){
+  if(!pendingScore) return null;
+  const {score:s,rank}=pendingScore; pendingScore=null;
+  const inp=document.getElementById('name-input');
+  const name=cleanName(inp?inp.value:'');
+  let arr=loadScores();
+  if(name&&arr[rank]&&arr[rank].s===s&&arr[rank].n!==name){
+    arr[rank].n=name;
+    try{ localStorage.setItem(LS_PREFIX+'scores',JSON.stringify(arr)); }catch(e){}
+  }
+  if(name) lsSet('playername',name);
+  return {arr,rank};
+}
+function confirmName(){
+  const r=commitPendingScore(); if(!r) return;
+  SFX.powerup();
+  const wrap=document.getElementById('go-scores');
+  if(wrap) wrap.innerHTML=`<table id="scores-table" style="margin-top:6px;">${gameOverRows(r.arr,r.rank)}</table>`;
+}
 function clearFragAnim(){ if(_fragAnimTimer){ clearInterval(_fragAnimTimer); _fragAnimTimer=null; } }
-function showGameOver(scoresArr,elapsed,earned,isRecord){
+// Salida de la pantalla de Game Over hacia otro overlay o una partida nueva
+function leaveGameOver(){ commitPendingScore(); clearFragAnim(); }
+function showGameOver(elapsed,earned,isRecord){
   const o=document.getElementById('overlay'); o.style.display='flex';
   clearFragAnim();
-  const rows=scoresArr.slice(0,5).map((s,i)=>`<tr class="${score===s&&i===0?'hi':''}"><td>#${i+1}</td><td>${String(s).padStart(6,'0')}</td></tr>`).join('');
+  let scoresHtml;
+  if(pendingScore){
+    scoresHtml=`<div class="name-entry">
+      <label>★ TOP ${pendingScore.rank+1} · TU NOMBRE</label>
+      <input id="name-input" maxlength="${NAME_MAX}" autocomplete="off" autocapitalize="characters" spellcheck="false" value="${cleanName(lsStr('playername'))}" oninput="this.value=cleanName(this.value)" onkeydown="if(event.key==='Enter'){confirmName();event.preventDefault();}">
+      <p class="hint">${NAME_MAX} caracteres · A-Z 0-9 · ENTER guarda</p>
+      <button class="ovl-btn secondary" style="margin-top:4px;padding:6px 18px;" onclick="confirmName()">GUARDAR</button>
+    </div>`;
+  } else scoresHtml=`<table id="scores-table" style="margin-top:6px;">${scoreRows(loadScores(),-1,5)}</table>`;
   const acc=shotsFiredRun>0?Math.round(shotsHitRun/shotsFiredRun*100):0;
   const modHtml=runModifier?`<p class="sub" style="color:#fa4;">MOD: ${runModifier.name}</p>`:'';
   const dailyHtml=dailyMode?`<p class="sub" style="color:#fa4;">DAILY: ${dailyChallenge.name}${dailyRewarded?' · ✔ COMPLETADO +'+DAILY_REWARD:dailyCompleted?' · ✔ OBJETIVO (ya premiado hoy)':''}</p>`:'';
@@ -1945,7 +2022,7 @@ function showGameOver(scoresArr,elapsed,earned,isRecord){
     <div class="frag-big" id="frag-counter">0</div>
     <div class="hint" style="color:#96c;">${breakdown}</div>
     <div class="hint" style="color:#96c;">TOTAL: <strong id="frag-total">${fragments-earned}</strong> ◈</div>
-    <table id="scores-table" style="margin-top:6px;">${rows}</table>
+    <div id="go-scores">${scoresHtml}</div>
     ${DIFF_ROW_HTML()}
     <div class="btn-row">
       <button class="ovl-btn" onclick="startGame(${dailyMode?'true':'false'})">OTRA PARTIDA</button>
@@ -1955,6 +2032,8 @@ function showGameOver(scoresArr,elapsed,earned,isRecord){
   `;
   animateFragments(earned,fragments-earned);
   if(isRecord){ SFX.newRecord(); confetti(); }
+  const ni=document.getElementById('name-input');
+  if(ni&&window.matchMedia('(pointer:fine)').matches) setTimeout(()=>ni.focus(),50);
 }
 // Contador animado de fragments ("datos absorbidos")
 function animateFragments(earned,baseTotal){
@@ -1987,7 +2066,7 @@ function confetti(){
 
 // ── HANGAR (upgrades permanentes) ────────────────────────────
 function showHangar(){
-  const o=document.getElementById('overlay'); o.style.display='flex'; clearFragAnim();
+  const o=document.getElementById('overlay'); o.style.display='flex'; leaveGameOver();
   const rows=UPGRADES.map(u=>{
     const lvl=upgLvl(u.id), maxed=lvl>=u.max, cost=upgradeCost(u,lvl);
     const can=!maxed&&fragments>=cost;
@@ -2020,7 +2099,7 @@ function buyUpgrade(id){
 
 // ── GALERÍA DE AMENAZAS ──────────────────────────────────────
 function showGallery(){
-  const o=document.getElementById('overlay'); o.style.display='flex';
+  const o=document.getElementById('overlay'); o.style.display='flex'; leaveGameOver();
   const cards=WAVES.map((w,i)=>{
     const seen=threatsSeen.has(w.shape);
     return `<div class="gal-card${seen?'':' locked'}"><canvas width="44" height="44" data-shape="${w.shape}" data-color="${w.color}"></canvas><span class="gal-name" style="color:${w.color}">${seen?w.name:'???'}</span><span class="gal-lore">${seen?THREAT_LORE[w.shape]:'Wave '+(i+1)+' · sin datos'}</span></div>`;
@@ -2046,7 +2125,7 @@ function saveDailyScore(s){
   lsSet('daily_scores',{seed:getDailySeed(),arr});
 }
 function showDaily(){
-  const o=document.getElementById('overlay'); o.style.display='flex';
+  const o=document.getElementById('overlay'); o.style.display='flex'; leaveGameOver();
   const d=getDailyChallenge();
   const done=lsStr('daily_done')===String(d.seed);
   const sc=loadDailyScores();
@@ -2070,16 +2149,15 @@ function toggleChallengeMode(){
 }
 
 function showMenu(){
-  const o=document.getElementById('overlay'); o.style.display='flex'; clearFragAnim();
+  const o=document.getElementById('overlay'); o.style.display='flex'; leaveGameOver();
   const sc=loadScores();
-  const rows=sc.slice(0,5).map((s,i)=>`<tr><td>#${i+1}</td><td>${String(s).padStart(6,'0')}</td></tr>`).join('');
-  const tableHtml=sc.length?`<table id="scores-table" style="margin-top:8px">${rows}</table>`:'';
+  const tableHtml=sc.length?`<p class="hint" style="margin-top:8px;color:#ff6;">TOP ${SCORES_MAX}</p><div class="scores-scroll"><table id="scores-table" style="margin-top:0">${scoreRows(sc,-1)}</table></div>`:'';
   o.innerHTML=`
     <h2>SPACEMANIA</h2>
     <p class="sub">A SPACE NIGHTMARE · 2026 EDITION</p>
     <p class="hint" style="margin-top:8px;">← → / ratón = mover · ESPACIO / clic = disparar</p>
     <p class="hint">← → guía el disparo · ESC = pausa</p>
-    <p class="hint" style="color:#4af;margin-top:4px;">🛡 Escudo (4 impactos) · ⚡ Power-ups · 👾 Boss cada 3 ciclos</p>
+    <p class="hint" style="color:#4af;margin-top:4px;">🛡 Escudo (4 impactos) · ⚡ Power-ups · 👾 Boss cada 2 ciclos</p>
     <p class="hint" style="color:#c6f;">◈ ${fragments} fragments · Hangar para mejoras permanentes</p>
     <p class="hint" style="margin-top:6px;">Selecciona dificultad:</p>
     ${DIFF_ROW_HTML()}
@@ -2107,7 +2185,8 @@ function showMenu(){
 let shotsFiredRun=0, shotsHitRun=0, _prevDifficulty=null;
 function startGame(daily){
   resumeAC();
-  clearFragAnim();
+  leaveGameOver();
+  keys={}; // ninguna tecla heredada del overlay anterior (p. ej. escribir el nombre)
   document.getElementById('overlay').style.display='none';
   document.getElementById('pause-overlay').style.display='none';
   clearAllPowerups();
@@ -2133,7 +2212,7 @@ function startGame(daily){
   isTutorialWave=false; tutorialKills=0;
   speedKills=0; shotsFired=0; shotsHit=0; shotsFiredRun=0; shotsHitRun=0;
   runFragments=0; bossesKilled=0; maxComboRun=1; nearMisses=0; _recordChimeDone=false;
-  ascension=0; ascensionMax=100; ascensionActive=false; ascensionTimer=0; ascensionsThisRun=0; overclockTimer=0;
+  ascension=0; ascensionsThisRun=0; ascensionMax=ascensionThreshold(); ascensionActive=false; ascensionTimer=0; overclockTimer=0; // reset de ascensionsThisRun ANTES del umbral
   burstTimer=0; assaultTimer=0; lastPlayerX=W/2; playerVel=0; lastFireFrame=-99;
   resetShieldTimer(); resetPowerupTimer();
   player.x=W/2;
@@ -2298,6 +2377,7 @@ function loop(){
 // ── CONTROLES ────────────────────────────────────────────────
 document.addEventListener('keydown',e=>{
   resumeAC();
+  if(e.target&&e.target.tagName==='INPUT') return; // campo de nombre del Game Over
   if(listeningForKey&&e.key!=='Escape'){
     keyFire=e.key; localStorage.setItem(LS_PREFIX+'keyfire',keyFire);
     updateKeyFireDisplay(); listeningForKey=false; e.preventDefault(); return;
@@ -2312,7 +2392,7 @@ document.addEventListener('keydown',e=>{
     if(paused) stopMusic(); else startMusic();
   }
 });
-document.addEventListener('keyup',e=>{ keys[e.key]=false; });
+document.addEventListener('keyup',e=>{ if(e.target&&e.target.tagName==='INPUT') return; keys[e.key]=false; });
 C.addEventListener('mousemove',e=>{
   resumeAC();
   if(state!=='playing'||paused||playerExploding) return;
