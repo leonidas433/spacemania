@@ -10,7 +10,7 @@
   // Sin consentimiento no se activan cookies de analítica ni de anuncios
   gtag('consent', 'default', {ad_storage:'denied', ad_user_data:'denied', ad_personalization:'denied', analytics_storage:'denied', wait_for_update:500});
   // Respeta una decisión previa (compartida con webdoctor.es: mismo origen)
-  try{var _c=JSON.parse(localStorage.getItem('wd_cookie_consent'));if(_c&&_c.choice==='accept'){gtag('consent','update',{ad_storage:'granted',ad_user_data:'granted',ad_personalization:'granted',analytics_storage:'granted'});}}catch(e){}
+  try{var _c=JSON.parse(localStorage.getItem('wd_cookie_consent'));if(_c&&_c.choice==='accept'){gtag('consent','update',{analytics_storage:'granted'});}}catch(e){}
   gtag('js', new Date());
   gtag('config', 'G-98DJ7JVHYD');
 </script>
@@ -338,7 +338,7 @@ body.rm *{animation:none!important;}
 <p><strong>Cómo se juega:</strong> muévete con las flechas o el ratón y dispara con espacio o clic. Si te mueves mientras disparas, guías el misil en vuelo. En el móvil, desliza para mover y toca para disparar. Pulsa ESC para pausar.</p>
 </section>
 
-<div id="sm-privacy-notice" role="dialog" aria-label="Privacidad y cookies">
+<div id="sm-privacy-notice" role="dialog" aria-modal="true" aria-label="Privacidad y cookies">
 <p>Usamos cookies de analítica (Google Analytics) para saber cómo se juega. Solo se activan si las aceptas; puedes rechazarlas y seguir jugando igual. Más información en la <a href="/cookies/">política de cookies</a> y la <a href="/privacidad/">política de privacidad</a>.</p>
 <div class="sm-privacy-actions">
 <button type="button" class="sm-privacy-btn accept" onclick="smPrivacy.choose('accept')">Aceptar</button>
@@ -348,7 +348,7 @@ body.rm *{animation:none!important;}
 <script>
 (function(){
   var K='wd_cookie_consent', el=document.getElementById('sm-privacy-notice');
-  function apply(c){var g=(c==='accept')?'granted':'denied';if(typeof gtag==='function'){gtag('consent','update',{analytics_storage:g,ad_storage:g,ad_user_data:g,ad_personalization:g});}}
+  function apply(c){var g=(c==='accept')?'granted':'denied';if(typeof gtag==='function'){gtag('consent','update',{analytics_storage:g});}}
   window.smPrivacy={
     choose:function(c){try{localStorage.setItem(K,JSON.stringify({choice:c,ts:Date.now(),v:1}));}catch(e){}if(el)el.classList.remove('open');apply(c);},
     open:function(){if(el)el.classList.add('open');}
