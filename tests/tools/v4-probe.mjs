@@ -34,6 +34,9 @@ await Promise.all(Array.from({ length: RUNS }, async (_, n) => {
   const m = await p.evaluate(() => ({
     ev: window.__ev, wave: waveIdx, cycle: maxCycleReached, kills: totalKills,
     stats: eventDirector ? eventDirector.stats : null,
+    route: eventDirector ? eventDirector.route : null,
+    flags: eventDirector ? eventDirector.routeFlags : null,
+    score, maxCombo: maxComboRun, near: nearMisses,
     metrics: v4Metrics, disc: [...discoveries], st: state,
     orphans: enemies.filter(e => e.ephemeral).length,
   }));
@@ -47,7 +50,12 @@ for (const m of all.sort((a, b) => a.run - b.run)) {
   ids.forEach(x => counts[x] = (counts[x] || 0) + 1);
   console.log(`run${m.run}: waves=${m.wave} ciclo=${m.cycle} kills=${m.kills} eventos=${ids.length} ${JSON.stringify(counts)}`);
   console.log(`        secuencia: ${ids.join(' → ') || '(ninguno)'}`);
-  console.log(`        stats=${JSON.stringify(m.stats)} descubrimientos=${m.disc.join(',') || '-'} huérfanos=${m.orphans} errores=${m.errs.length}`);
+  console.log(`        stats=${JSON.stringify(m.stats)} huérfanos=${m.orphans} errores=${m.errs.length}`);
+  console.log(`        ruta=${m.route} transmisiones=${(m.flags && m.flags.transmissions) || 0} combo máx=${m.maxCombo} esquivas=${m.near} score=${m.score}`);
+  const secrets = m.disc.filter(d => ['sol_signal', 'ghost_fragment', 'unknown_transmission', 'route_eclipse'].includes(d));
+  const objs = m.disc.filter(d => d.startsWith('obj_'));
+  console.log(`        registro: eventos=${m.disc.filter(d => !d.startsWith('obj_') && !secrets.includes(d)).join(',') || '-'}`);
+  console.log(`                  secretos=${secrets.join(',') || '-'} · objetivos ocultos=${objs.join(',') || '-'}`);
   if (m.errs.length) console.log('        ', m.errs.slice(0, 3));
   // Anti-repetición: nunca el mismo id dos veces seguidas
   let rep = 0;

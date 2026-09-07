@@ -6,7 +6,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 SpaceMania is a single-file HTML5 canvas arcade shooter. All code — CSS, HTML, and JavaScript — lives in `index.html` (≈2030 lines). There is no build system, no package manager, and no external dependencies. The game uses the Web Audio API for all sound.
 
-**Current version:** 3.3.0. Plans in `spacemania-plan/`: balance pass in `08-PLAYTEST-BALANCE-2026-09-06.md`, audit response in `09-PLAN-AUDITORIA-v3.2.md` (both fully implemented). Licensed MIT.
+**Current version:** 4.0.0. Plans in `spacemania-plan/`: balance pass in `08-PLAYTEST-BALANCE-2026-09-06.md`, audit response in `09-PLAN-AUDITORIA-v3.2.md` (both fully implemented). Licensed MIT.
 
 ## Running locally
 
@@ -86,6 +86,7 @@ All persistence uses the prefix `LS_PREFIX = 'retro-game-mania.spacemania.'`. Ke
 - `scores` — JSON array of top-20 `{n, s, d}` objects (name, score, ISO date); legacy numeric arrays are normalized on load by `normScores()` with name `---`. `SCORES_MAX=20`, `NAME_MAX=7`. Name entry flow: `endGame()` saves immediately with the last name used (`playername`) and sets `pendingScore={score,rank}`; `showGameOver()` renders `#name-input`; `commitPendingScore()` only renames that entry, called by `confirmName()` (Enter/GUARDAR) and by `leaveGameOver()` from any overlay/`startGame()`. `clearFragAnim()` stays side-effect free. The global keydown/keyup handlers ignore events whose target is an INPUT
 - `achievements` — JSON array of unlocked IDs
 - `colorblind`, `reducedmotion`, `keyfire`, `firstgame`, `mercy` (v3.2 forgiving hitbox)
+- v4: `discoveries` — array of catalogued anomaly / secret / hidden-objective ids, written by `registerDiscovery()`. Nothing else about a run persists: the director's state, cooldowns and route are per-run by design
 - v3.0: `fragments` (number), `upgrades` (object id→level), `stats` (lifetime counters), `threats` (array of shapes seen), `ascension_seen`, `challenge`, `daily_done` (seed of the day), `daily_scores` (`{seed, arr}`)
 - v3.2: `prestige` (number) — Fleet Ascension count. Multiplies fragments by `1+0.25*prestige` in both `calcRunFragments()` and `fragMultiplier()`. `doPrestige()` requires `hangarMaxed()` and a prior `armPrestige()`; it wipes `upgrades` and `fragments`.
 
@@ -107,11 +108,24 @@ Background fill → stars (back layer → front layer) → player movement + bur
 
 ## Tests
 
-`npm test` runs `tests/run.mjs`: seven suites, 98 checks, about twenty seconds, non-zero exit on failure. GitHub Actions runs them on every push (`.github/workflows/ci.yml`). Add a check to the matching suite whenever you change behaviour; `tests/README.md` documents each one. `tests/tools/` holds the balance bot and the refresh-rate probe, which are manual because they take minutes.
+`npm test` runs `tests/run.mjs`: eight suites, 172 checks, about twenty-five seconds, non-zero exit on failure. GitHub Actions runs them on every push (`.github/workflows/ci.yml`). Add a check to the matching suite whenever you change behaviour; `tests/README.md` documents each one. `tests/tools/` holds the balance bot and the refresh-rate probe, which are manual because they take minutes.
 
 The `syntax` suite guards three architecture invariants and will fail loudly if they are broken: the renderer stays Canvas 2D with no WebGL, there are no external dependencies, and the hot arrays are never rebuilt per frame.
 
 ## Key constraints
+
+### Event Director (v4)
+
+A decision layer above the waves, in the `V4 · EVENT DIRECTOR` sections. It never moves entities: it arms events that reuse `makeEnemy()`, `movePattern()`, `killEnemy()`, `addScore()`, `checkCollisions()` and the pools. There is no parallel game engine and there must never be one.
+
+- Lifecycle `IDLE → ARMED → TELEGRAPH → ACTIVE → RESOLVE → COOLDOWN`, all driven by `updateDirector(DT)`.
+- `planWaveEvent()` runs **once per wave**, at the end of `spawnWave()`. Never decide per frame.
+- Selection is `eventWeight()` + `pickEvent()` over `SPACE_EVENTS`, using the seeded `dRnd()`. Never `Math.random()` in director logic: the Daily seeds the director and must stay reproducible.
+- `WAVE_ROLES` / `ROLE_KINDS` gate which event kind fits the current wave. `intro`, `mastery` and `pre_boss` take none.
+- Event enemies are created with `spawnEventEnemy()` and carry `ephemeral`: they do not hold the wave clear (`waveEnemiesAlive()`) and never enter the wave Threat Gallery.
+- Every event must define `start` and may define `update`, `onKill`, `resolve` and `abort` in `EVENT_HANDLERS`. `resolveEvent()` and `abortEvent()` both call `cleanupEventEntities()`; an aborted event still counts for anti-repeat.
+
+**Adding an event.** Answer the six questions from `spacemania-plan/README-V4-CODE.md` first: what changes, why the player should care, how they know it is coming, what they can do, what the reward or consequence is, and how it ends cleanly. Then add an entry to `SPACE_EVENTS` and a handler. A dangerous event without a telegraph is a bug, and there is a test that fails on it.
 
 - **Do not split into multiple files.** The single-file design is intentional — the game deploys as one asset with no server-side routing.
 - **No framework, no bundler.** Keep it vanilla JS + Canvas 2D + Web Audio API.

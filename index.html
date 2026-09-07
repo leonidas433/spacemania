@@ -279,7 +279,7 @@ const LS_PREFIX='retro-game-mania.spacemania.';
 // ============================================================
 //  SpaceMania — retro-game-mania
 //  Autor: retro-game-mania project
-//  Versión: 3.3.0
+//  Versión: 4.0.0
 //  Fecha: 2026-09-06
 //  v2.1.0: curva de dificultad progresiva — velocidad y cadencia
 //          de disparo enemigo escalan por wave y ciclo
@@ -294,6 +294,9 @@ const LS_PREFIX='retro-game-mania.spacemania.';
 //          enemiga por familia, Ascenso de Flota (prestigio)
 //  v3.3.0: la simulación pasa a depender del tiempo real y no de la
 //          tasa de refresco (ver RELOJ DE SIMULACIÓN)
+//  v4.0.0: Event Director. Una capa de decisión sobre las oleadas con
+//          10 eventos, papeles de pacing, dos rutas, tres secretos,
+//          objetivos ocultos y anticipación del boss
 // ============================================================
 
 // ── CURVA DE DIFICULTAD PROGRESIVA ──────────────────────────
@@ -884,14 +887,42 @@ const SPACE_EVENTS=[
     tags:['attention'] },
   { id:'phantom_formation', kind:'surprise', label:'ECO FANTASMA', color:'#e4a',
     minCycle:2, minWave:8, weight:7, intensity:26,
-    telegraph:0.6, duration:11, cooldownWaves:3, canRepeat:false,
+    telegraph:0.6, duration:9, cooldownWaves:3, canRepeat:false,
     tags:['attention','skill'] },
   { id:'hunter', kind:'threat', label:'CAZADOR', color:'#f44',
     minCycle:2, minWave:10, weight:7, intensity:42,
-    telegraph:0.9, duration:11, cooldownWaves:4, canRepeat:false,
+    telegraph:0.9, duration:9, cooldownWaves:4, canRepeat:false,
     tags:['priority','threat','skill'] },
+  // Secretos: `silent` los deja sin anuncio previo. Descubrirlos es el juego.
+  { id:'sol_signal', kind:'secret', label:'SEÑAL SOLITARIA', color:'#9f9',
+    minCycle:1, minWave:6, weight:4, intensity:4, silent:true,
+    telegraph:0.2, duration:8, cooldownWaves:5, canRepeat:false,
+    tags:['discovery'] },
+  { id:'ghost_fragment', kind:'secret', label:'FRAGMENTO ESPECTRAL', color:'#8ff',
+    minCycle:1, minWave:5, weight:6, intensity:4, silent:true,
+    telegraph:0.2, duration:8, cooldownWaves:4, canRepeat:false,
+    tags:['discovery','skill'],
+    requires:ctx=>ctx.comboMult>=6||ctx.tension>=24 },
 ];
 function eventById(id){ return SPACE_EVENTS.find(e=>e.id===id)||null; }
+
+// Papel de cada oleada dentro del ciclo. No es visible para el jugador: define
+// qué clase de evento encaja y da forma de onda al ciclo en lugar de una
+// pendiente constante de dificultad.
+const WAVE_ROLES=['intro','mastery','escalation','event','combination','relief',
+                  'escalation','event','climax','combination','pre_boss','climax'];
+// Clases admitidas por papel. `null` = ninguna: la oleada se juega limpia.
+const ROLE_KINDS={
+  intro:null, mastery:null,
+  escalation:['bonus','surprise'],
+  event:['bonus','surprise','threat','secret'],
+  combination:['surprise','threat'],
+  relief:['bonus','secret'],
+  climax:['threat','surprise'],
+  pre_boss:null,
+};
+function roleForWave(w){ return WAVE_ROLES[((w%WAVE_COUNT)+WAVE_COUNT)%WAVE_COUNT]; }
+function currentWaveRole(){ return roleForWave(waveIdx); }
 function secsToSteps(s){ return s*60; }
 
 // Motivos sonoros de evento. Cortos y reconocibles; no son música nueva.
@@ -940,7 +971,7 @@ function buildDirectorContext(){
     nearMisses, enemiesAlive:enemies.length,
     isBossWave, isTutorial:isTutorialWave,
     intensity:d?d.intensity:0, tension:d?d.tension:0,
-    route:d?d.route:'alpha',
+    route:d?d.route:'alpha', role:currentWaveRole(),
     runModifier, dailyMode, dailyChallenge,
   };
 }
@@ -970,6 +1001,8 @@ function directorVeto(ctx){
   if(playerExploding) return 'player-exploding';
   if(eventDirector.active) return 'event-active';
   if(ctx.waveAbs<V4_DIRECTOR.firstEventWave) return 'too-early';
+  if(wavesUntilBoss()===1) return 'pre-boss';   // la tensión previa es del boss
+  if(!ROLE_KINDS[currentWaveRole()]) return 'role-'+currentWaveRole();
   return null;
 }
 
@@ -980,6 +1013,9 @@ function eventWeight(def,ctx){
   if(ctx.waveAbs<def.minWave) return 0;
   if((d.eventCooldowns[def.id]||0)>0) return 0;
   if(d.lastEventId===def.id&&!def.canRepeat) return 0;
+  if(def.requires&&!def.requires(ctx)) return 0;   // secretos condicionados a pericia
+  const kinds=ROLE_KINDS[currentWaveRole()];
+  if(!kinds||kinds.indexOf(def.kind)<0) return 0;  // el papel de la oleada manda
   let w=def.weight;
   if(d.recentEvents.includes(def.id)) w*=0.35;
   // Alivio: con la escena cargada, la amenaza pierde peso y el bonus lo gana
@@ -1023,7 +1059,7 @@ function planWaveEvent(){
   const forced=d.pityCounter>=V4_DIRECTOR.pityAfterWaves;
   if(!forced){
     // Probabilidad base modulada por cuánto tiempo lleva sin pasar nada
-    const p=Math.min(0.7,0.18+0.14*d.wavesSinceEvent);
+    const p=Math.min(0.82,(0.18+0.14*d.wavesSinceEvent)*currentRoute().eventBias);
     if(dRnd()>p) return null;
   }
   const def=pickEvent(ctx);
@@ -1044,6 +1080,8 @@ function startEventTelegraph(a){
   a.phase='telegraph';
   a.timer=secsToSteps(a.def.telegraph);
   a.telegraphed=true;
+  // Un secreto anunciado deja de serlo: entra sin texto, solo con su presencia
+  if(a.def.silent){ playTone(240,'sine',0.2,0.05,0.02); return; }
   const threat=a.def.kind==='threat';
   showAnnounce('shield',threat?'⚠ SEÑAL HOSTIL':'⚠ SEÑAL DETECTADA',a.def.color);
   (threat?SFX_V4.threat:SFX_V4.signal)();
@@ -1060,9 +1098,11 @@ function beginEventAction(a){
   catch(err){ if(V4_DEBUG) console.debug('[V4] start failed',err); abortEvent('start-threw'); return; }
   d.stats.shown++;
   if(v4Metrics){ v4Metrics.started++; v4Metrics.eventsById[a.def.id]=(v4Metrics.eventsById[a.def.id]||0)+1; }
-  showAnnounce('wave',a.def.label,a.def.color);
-  announce('Evento: '+a.def.label);
-  if(!reducedMotion) screenShake=Math.max(screenShake,a.def.kind==='threat'?4:2);
+  if(!a.def.silent){
+    showAnnounce('wave',a.def.label,a.def.color);
+    announce('Evento: '+a.def.label);
+    if(!reducedMotion) screenShake=Math.max(screenShake,a.def.kind==='threat'?4:2);
+  }
   if(V4_DEBUG) console.debug('[V4 EVENT] start',{id:a.def.id,wave:waveIdx,cycle,route:d.route,seed:d.seed});
 }
 
@@ -1156,6 +1196,8 @@ function directorWaveEnd(){
 function directorNearMiss(){
   const d=eventDirector; if(!d) return;
   d.tension=Math.min(100,d.tension+V4_DIRECTOR.tensionPerNearMiss);
+  d.routeFlags.nearStreak=(d.routeFlags.nearStreak||0)+1;
+  d.routeFlags.nearStreakBest=Math.max(d.routeFlags.nearStreakBest||0,d.routeFlags.nearStreak);
 }
 
 // Un enemigo de evento ha muerto: el handler decide qué significa.
@@ -1572,6 +1614,193 @@ function resolveDataRushEvent(a){
   registerDiscovery('data_rush');
 }
 
+
+// ── V4 · RUTAS ───────────────────────────────────────────────
+// Dos rutas, no diez. Alpha es la partida conocida; Eclipse es la variante que
+// el jugador aprende a provocar. No cambia controles: cambia contenido, ritmo
+// y recompensa, y se anuncia con claridad cuando entra.
+const ROUTES={
+  alpha:  { id:'alpha',   label:'SECTOR ALPHA',   color:'#4af', scoreMult:1,    eventBias:1,   enemySpeed:1,    tint:null },
+  eclipse:{ id:'eclipse', label:'SECTOR ECLIPSE', color:'#96c', scoreMult:1.3,  eventBias:1.6, enemySpeed:1.12, tint:'rgba(60,20,90,0.16)' },
+};
+function currentRoute(){ return ROUTES[eventDirector?eventDirector.route:'alpha']||ROUTES.alpha; }
+function routeScoreMult(){ return currentRoute().scoreMult; }
+function routeEnemySpeed(){ return currentRoute().enemySpeed; }
+
+// Se evalúa al terminar una oleada. Dos vías: curiosidad o pericia.
+function evaluateRoute(){
+  const d=eventDirector; if(!d||d.route!=='alpha') return;
+  const bySecret=d.routeFlags.transmissions>=3;
+  // Umbrales altos a propósito: si Eclipse sale en toda partida deja de ser un
+  // descubrimiento y pasa a ser el juego normal.
+  const bySkill=maxComboRun>=18||d.routeFlags.nearStreakBest>=12;
+  if(!bySecret&&!bySkill) return;
+  d.route='eclipse';
+  d.routeFlags.enteredAt=waveIdx;
+  showAnnounce('wave','✦ SECTOR ECLIPSE ✦\nSEÑAL PROFUNDA ESTABLE',ROUTES.eclipse.color);
+  SFX_V4.discovery();
+  if(!reducedMotion) screenFlash(0.45);
+  announce('Sector Eclipse. Más eventos, más riesgo y más puntuación');
+  registerDiscovery('route_eclipse');
+  document.getElementById('wave-name').style.color=ROUTES.eclipse.color;
+}
+
+// ── V4 · TRANSMISIÓN DESCONOCIDA ─────────────────────────────
+// Foreshadowing puro: un mensaje corto y sin explicación. A la tercera, abre
+// el Sector Eclipse. Es la pieza que convierte "¿qué fue eso?" en progresión.
+const TRANSMISSIONS=[
+  '···— SEÑAL SIN ORIGEN',
+  '··—· ALGO RESPONDE',
+  '—··— LA SEÑAL SE ESTABILIZA',
+];
+function maybeTransmission(){
+  const d=eventDirector; if(!d||d.route!=='alpha') return;
+  const n=d.routeFlags.transmissions||0;
+  if(n>=3) return;
+  if(waveIdx<4||d.active) return;
+  if(dRnd()>0.16) return;
+  d.routeFlags.transmissions=n+1;
+  showAnnounce('shield',TRANSMISSIONS[n],'#96c');
+  playTone(70+n*18,'sine',0.5,0.07,0.02);
+  announce('Transmisión desconocida');
+  if(n+1>=3) registerDiscovery('unknown_transmission');
+}
+
+// ── V4 · ANTICIPACIÓN DEL BOSS ───────────────────────────────
+// El boss deja de ser "de repente" y pasa a ser "venía algo grande".
+function bossAtWave(w){
+  const c=Math.floor(w/WAVE_COUNT)+1;
+  return c>1&&c%2===0&&w%WAVE_COUNT===0;
+}
+function wavesUntilBoss(){
+  for(let k=1;k<=3;k++) if(bossAtWave(waveIdx+k)) return k;
+  return 0;
+}
+function primeBossAnticipation(){
+  const k=wavesUntilBoss();
+  if(k===1){
+    // Aviso inequívoco: la oleada previa se juega sabiendo lo que viene
+    showAnnounce('shield',`⚠ SEÑAL HOSTIL · NIVEL ${Math.min(bossPhaseIdx+1,BOSS_PHASES.length)}`,'#f84');
+    SFX_V4.threat();
+    announce('Señal hostil. El siguiente sector tiene un jefe');
+    document.getElementById('wave-name').textContent+=' · ⚠ SEÑAL HOSTIL';
+  } else if(k===2){
+    // Señal sutil: suficiente para inquietar, no para explicar
+    playTone(58,'sine',0.7,0.06,0.03);
+    addFloat(W/2,H*0.28,'···',  '#a86');
+  }
+}
+
+// ── V4 · OBJETIVOS OCULTOS ───────────────────────────────────
+// El juego no los explica. Se descubren jugando y quedan registrados.
+const HIDDEN_OBJECTIVES=[
+  { id:'flawless_wave', label:'OLEADA IMPECABLE', reward:260,
+    check:w=>w.shots>=8&&w.hits>=w.shots },
+  { id:'untouched_wave', label:'SIN UN RASGUÑO', reward:220,
+    check:w=>w.kills>=8&&w.damage===0 },
+  { id:'dodge_wave', label:'BAILE DE BALAS', reward:300,
+    check:w=>w.nearMisses>=6 },
+  { id:'silent_wave', label:'SILENCIO TÁCTICO', reward:340,
+    check:w=>w.maxNoFire>=240&&w.kills>=4 },
+];
+let waveStats=null;
+function resetWaveStats(){ waveStats={shots:0,hits:0,kills:0,damage:0,nearMisses:0,noFire:0,maxNoFire:0}; }
+function updateWaveStats(dt){
+  if(!waveStats||state!=='playing') return;
+  waveStats.noFire+=dt;
+  if(waveStats.noFire>waveStats.maxNoFire) waveStats.maxNoFire=waveStats.noFire;
+}
+function checkHiddenObjectives(){
+  if(!waveStats||isTutorialWave) return;
+  for(const o of HIDDEN_OBJECTIVES){
+    let ok=false;
+    try{ ok=o.check(waveStats); }catch(e){}
+    if(!ok) continue;
+    const pts=addScore(o.reward+cycle*60,false);
+    addFloat(W/2,H*0.36,`✧ ${o.label} +${pts}`,'#ff6');
+    SFX_V4.reward();
+    announce('Objetivo oculto: '+o.label);
+    registerDiscovery('obj_'+o.id);
+  }
+}
+
+// ── V4 · SECRETOS ────────────────────────────────────────────
+// SEÑAL SOLITARIA — secreto de observación.
+// Cambia: un punto tenue late en algún lugar de la pantalla, sin anuncio.
+// Riesgo: ninguno. Ignorarlo no cuesta nada; ese es el trato.
+// Señal: su propio latido y un tono grave repetido. No hay texto.
+// Respuesta: verlo y dispararle.
+// Premio: puntuación alta, fragmentos y registro.
+function startSolSignalEvent(a){
+  a.data.x=70+dRnd()*(W-140);
+  a.data.y=60+dRnd()*(H*0.42);
+  a.data.hit=false;
+  a.data.pulse=0;
+}
+function updateSolSignalEvent(a,dt){
+  a.data.pulse+=dt;
+  if(a.data.pulse>=45){ a.data.pulse-=45; playTone(150,'sine',0.16,0.035); }
+  const {x,y}=a.data;
+  cx.save();
+  cx.globalAlpha=reducedMotion?0.55:0.3+Math.sin(frame*0.11)*0.25;
+  cx.strokeStyle='#9f9'; cx.lineWidth=1.4;
+  cx.beginPath(); cx.arc(x,y,9,0,Math.PI*2); cx.stroke();
+  cx.beginPath(); cx.arc(x,y,3,0,Math.PI*2); cx.stroke();
+  cx.restore();
+  // Colisión propia: es un objetivo, no un enemigo con IA
+  for(let i=0;i<bullets.length;i++){
+    const b=bullets[i];
+    if(b.hit) continue;
+    if(Math.abs(b.x-x)<14&&Math.abs(b.y-y)<14){ b.hit=true; a.data.hit=true; resolveEvent('completed'); return; }
+  }
+}
+function resolveSolSignalEvent(a,outcome){
+  if(outcome!=='completed') return;
+  const {x,y}=a.data;
+  const pts=addScore(900+cycle*220,true);
+  addFloat(x,y-20,'¡SEÑAL SOLITARIA! +'+pts,'#9f9');
+  spawnParticles(x,y,'#9f9',LOW_FX?10:24);
+  for(let i=0;i<5;i++) spawnMiniFrag(x+(dRnd()-0.5)*70,y);
+  SFX_V4.discovery(); if(!reducedMotion) screenFlash(0.4);
+  announce('Señal solitaria localizada');
+  registerDiscovery('sol_signal');
+  if(eventDirector) eventDirector.routeFlags.solFound=true;
+}
+
+// FRAGMENTO ESPECTRAL — secreto de pericia.
+// Solo existe si el jugador viene de una racha: combo alto o esquivas seguidas.
+// Cambia: aparece un fragmento único de valor muy alto.
+// Señal: sonido propio y forma distinta; no se anuncia como evento.
+// Respuesta: alcanzarlo antes de que se apague.
+function startGhostFragmentEvent(a){
+  a.data.x=60+dRnd()*(W-120); a.data.y=-16;
+  a.data.taken=false;
+  playTone(1760,'triangle',0.4,0.09,0.02);
+}
+function updateGhostFragmentEvent(a,dt){
+  a.data.y+=1.1*dt;
+  const {x,y}=a.data;
+  cx.save();
+  cx.globalAlpha=reducedMotion?0.8:0.5+Math.sin(frame*0.22)*0.35;
+  cx.strokeStyle='#8ff'; cx.lineWidth=2;
+  cx.beginPath();
+  cx.moveTo(x,y-11); cx.lineTo(x+8,y); cx.lineTo(x,y+11); cx.lineTo(x-8,y);
+  cx.closePath(); cx.stroke();
+  cx.restore();
+  if(Math.abs(x-player.x)<28&&Math.abs(y-player.y)<24){ a.data.taken=true; resolveEvent('completed'); return; }
+  if(y>H+20) resolveEvent('missed');
+}
+function resolveGhostFragmentEvent(a,outcome){
+  if(outcome!=='completed') return;
+  runFragments+=45;
+  const pts=addScore(500+cycle*160,true);
+  addFloat(player.x,player.y-46,'FRAGMENTO ESPECTRAL +45 ◈','#8ff');
+  spawnParticles(player.x,player.y-20,'#8ff',LOW_FX?8:18);
+  SFX_V4.discovery(); updateFragHUD();
+  announce('Fragmento espectral recogido');
+  registerDiscovery('ghost_fragment');
+}
+
 const EVENT_HANDLERS={
   courier:{ start:startCourierEvent, update:updateCourierEvent, onKill:onCourierKill,
             resolve:resolveCourierEvent },
@@ -1589,6 +1818,10 @@ const EVENT_HANDLERS={
                       onKill:onPhantomKill, resolve:resolvePhantomEvent },
   hunter:{ start:startHunterEvent, update:updateHunterEvent, onKill:onHunterKill,
            resolve:resolveHunterEvent },
+  sol_signal:{ start:startSolSignalEvent, update:updateSolSignalEvent,
+               resolve:resolveSolSignalEvent },
+  ghost_fragment:{ start:startGhostFragmentEvent, update:updateGhostFragmentEvent,
+                   resolve:resolveGhostFragmentEvent },
 };
 
 // ── V4 · DESCUBRIMIENTOS ─────────────────────────────────────
@@ -1680,6 +1913,7 @@ function enemySpeedBonus(){
   let m=1;
   if(runModifier&&runModifier.id==='overclocked') m*=1.25;
   if(dailyMode&&dailyChallenge.id==='fast') m*=1.4;
+  m*=routeEnemySpeed();   // v4: Eclipse acelera la oleada
   return m;
 }
 function makeEnemy(w,x,y,r,c){
@@ -1722,7 +1956,10 @@ function spawnWave(){
   }
   showAnnounce('wave',`WAVE ${(waveIdx%WAVE_COUNT)+1}\n${w.name}`,'#ff6');
   document.getElementById('wave-name').textContent=`WAVE ${(waveIdx%WAVE_COUNT)+1} · ${w.name}`;
-  planWaveEvent();   // v4: una única decisión por oleada, nunca por frame
+  resetWaveStats();
+  maybeTransmission();        // v4: foreshadowing sin explicación
+  primeBossAnticipation();    // v4: el boss se anuncia con una o dos oleadas
+  planWaveEvent();            // v4: una única decisión por oleada, nunca por frame
 }
 // Deepfake: al morir genera una copia (solo una vez por linaje)
 function spawnClone(e){
@@ -1747,6 +1984,10 @@ function spawnBoss(){
   };
   bossMinions=[]; bossTelegraphSfxDone=false;
   document.getElementById('wave-name').textContent=`⚠ BOSS · ${ph.name}`;
+  // v4: un silencio corto antes de la entrada. El vacío también es telegraph.
+  stopMusic();
+  const _bossRun=sessionStart;
+  setTimeout(()=>{ if(state==='playing'&&sessionStart===_bossRun&&!paused) startMusic(); },1100);
   showAnnounce('wave',`⚠ BOSS WAVE ⚠\n${ph.name}`,'#f84');
   announce(`Jefe: ${ph.name}`);
   SFX.bossAppear();
@@ -2181,6 +2422,7 @@ function fireBullet(opts){
   if(!silent){
     if(frame-lastFireFrame<FIRE_COOLDOWN||bullets.length>=MAX_BULLETS) return;
     lastFireFrame=frame; shotsFired++;
+    if(waveStats){ waveStats.shots++; waveStats.noFire=0; }
   } else if(bullets.length>=MAX_BULLETS) return;
   const speedMul=activeSynergy==='pierce+speed'?1.35:1;
   // CAZADOR DE ÉLITE: misil más rápido (b.speed lo usa el update de balas guiadas)
@@ -2386,6 +2628,8 @@ function playerHit(){
     updateShieldHUD(); return;
   }
   shipHp--; hitFlash=22; screenShake=6;
+  if(waveStats) waveStats.damage++;
+  if(eventDirector) eventDirector.routeFlags.nearStreak=0;   // recibir daño corta la racha
   announce(shipHp>0?`Impacto. Casco ${shipHp} de ${maxShipHp}`:'Nave destruida');
   spawnParticles(player.x,player.y,'#f84',8);
   addFloat(player.x,player.y-30,'¡IMPACTO!','#f84');
@@ -2654,6 +2898,7 @@ function checkNearMiss(b){
     const dx=Math.abs(b.x-player.x);
     if(dx>=10&&dx<NEAR_MISS_DIST){
       nearMisses++;
+      if(waveStats) waveStats.nearMisses++;
       directorNearMiss();   // v4: una esquiva es una acción con futuro
       const pts=5+Math.floor(Math.random()*11);
       addScore(pts,false);
@@ -2671,6 +2916,7 @@ function checkNearMiss(b){
 function addScore(base,withCombo){
   let pts=base*(withCombo?comboMult:1);
   if(runModifier) pts*=runModifier.ptsMult;
+  pts*=routeScoreMult();   // v4: la ruta multiplica en la misma ruta de puntuación
   if(dailyMode&&dailyChallenge.id==='combo_gate'){ if(comboMult<2) pts=0; else pts*=2; }
   pts=Math.round(pts);
   if(pts<=0) return 0;
@@ -2703,6 +2949,7 @@ function killEnemy(e,opts){
   else if(synCol&&Math.random()<0.25) addFloat(e.x,e.y-14,SYNERGIES[activeSynergy].name,synCol);
   if(pts>0&&Math.random()<0.3) addFloat(e.x,e.y+6,'+'+pts,'#ddd');
   SFX.hit();
+  if(waveStats) waveStats.kills++;
   energy=Math.min(100,energy+5); checkScoreMilestones(); registerKill();
   // Galería de Amenazas: solo familias de oleada, no entidades de evento
   if(!e.ephemeral&&!threatsSeen.has(e.shape)){
@@ -2765,6 +3012,7 @@ function checkCollisions(){
       const hw=e.size*1.1, hh=e.size*0.9;
       if(Math.abs(b.x-e.x)<hw&&Math.abs(b.y-e.y)<hh){
         impacted=true; shotsHit++;
+        if(waveStats) waveStats.hits++;
         const ex=e.x, ey=e.y;
         // v4: un enemigo con blindaje absorbe impactos antes de morir
         if(e.hp>1){ e.hp--; e.flash=8; SFX.bossHit(); spawnParticles(ex,ey,e.color,LOW_FX?2:5); }
@@ -2807,6 +3055,7 @@ function checkCollisions(){
       if(!m.alive||b.hitList.includes(m)) continue;
       if(Math.abs(b.x-m.x)<m.size*0.8&&Math.abs(b.y-m.y)<m.size*0.8){
         impacted=true; shotsHit++;
+        if(waveStats) waveStats.hits++;
         m.hp-=bulletDamage(b); m.flashTimer=5; SFX.bossHit(); spawnParticles(m.x,m.y,'#4ff',4);
         energy=Math.min(100,energy+2);
         if(m.hp<=0) killMinion(m);
@@ -2922,7 +3171,9 @@ function checkCollisions(){
 }
 
 function nextWave(){
-  directorWaveEnd();   // v4: cierra el evento en curso y envejece cooldowns
+  checkHiddenObjectives();   // v4: se evalúan con los datos de la oleada que acaba
+  directorWaveEnd();         // v4: cierra el evento en curso y envejece cooldowns
+  evaluateRoute();           // v4: ¿la partida ha cambiado de sector?
   waveIdx++;
   if(waveIdx%WAVE_COUNT===0){ cycle++; if(!ascensionActive){ ascensionMax=ascensionThreshold(); updateAscensionHUD(); } }
   if(shotsFired>0&&shotsHit>=shotsFired) unlockAchievement('sniper'); // >=: pierce/burst/autofire generan hits extra
@@ -3164,15 +3415,21 @@ function showGallery(){
   }).join('');
   const done=threatsSeen.size>=WAVES.length;
   // v4: las anomalías se catalogan aparte de las familias de oleada
-  const anomalies=SPACE_EVENTS.map(ev=>{
-    const seen=discoveries.has(ev.id);
-    return `<div class="gal-card${seen?'':' locked'}"><span class="gal-name" style="color:${seen?ev.color:'#445'}">${seen?ev.label:'???'}</span><span class="gal-lore">${seen?'Anomalía registrada':'Señal sin catalogar'}</span></div>`;
+  const REGISTRY=[
+    ...SPACE_EVENTS.map(ev=>({id:ev.id,label:ev.label,color:ev.color,lore:ev.kind==='secret'?'Secreto registrado':'Anomalía registrada'})),
+    {id:'route_eclipse',label:ROUTES.eclipse.label,color:ROUTES.eclipse.color,lore:'Sector alternativo alcanzado'},
+    {id:'unknown_transmission',label:'TRANSMISIÓN DESCONOCIDA',color:'#96c',lore:'Tres señales escuchadas'},
+    ...HIDDEN_OBJECTIVES.map(o=>({id:'obj_'+o.id,label:o.label,color:'#ff6',lore:'Objetivo oculto cumplido'})),
+  ];
+  const anomalies=REGISTRY.map(it=>{
+    const seen=discoveries.has(it.id);
+    return `<div class="gal-card${seen?'':' locked'}"><span class="gal-name" style="color:${seen?it.color:'#445'}">${seen?it.label:'???'}</span><span class="gal-lore">${seen?it.lore:'Sin catalogar'}</span></div>`;
   }).join('');
   o.innerHTML=`
     <h2>GALERÍA DE AMENAZAS</h2>
     <p class="sub">${threatsSeen.size} / ${WAVES.length} CATALOGADAS${done?' · +5% FRAGMENTS':''}</p>
     <div class="gallery-grid">${cards}</div>
-    <p class="sub" style="color:#ff6;margin-top:10px;">ANOMALÍAS · ${discoveries.size} / ${SPACE_EVENTS.length}</p>
+    <p class="sub" style="color:#ff6;margin-top:10px;">REGISTRO DE ANOMALÍAS · ${REGISTRY.filter(i=>discoveries.has(i.id)).length} / ${REGISTRY.length}</p>
     <div class="gallery-grid">${anomalies}</div>
     <button class="ovl-btn" onclick="showMenu()">VOLVER</button>
   `;
@@ -3263,6 +3520,8 @@ function startGame(daily){
   if(!dailyMode&&(challengeMode||Math.random()<MODIFIER_CHANCE)) runModifier=MODIFIERS[Math.floor(Math.random()*MODIFIERS.length)];
   // v4: el Daily usa su semilla diaria, así la secuencia de eventos es reproducible
   resetDirector(dailyMode?(dailyChallenge.seed>>>0):((Date.now()^((Math.random()*0xffffffff)>>>0))>>>0));
+  resetWaveStats();
+  document.getElementById('wave-name').style.color='';
 
   // Upgrades del Hangar
   maxShipHp=3+upgLvl('hull');
@@ -3331,6 +3590,9 @@ function loop(ts){
   cx.save();
   applyShake();
   cx.fillStyle='#050510'; cx.fillRect(-20,-20,W+40,H+40);
+  // v4: el sector actual se ve, no solo se anuncia
+  const _tint=currentRoute().tint;
+  if(_tint){ cx.fillStyle=_tint; cx.fillRect(-20,-20,W+40,H+40); }
 
   // Estrellas (parallax)
   // Capa lejana: color cacheado y cuantizado (pocos fillStyle por frame)
@@ -3404,6 +3666,7 @@ function loop(ts){
 
   // v4: el director decide contexto, no mueve entidades
   updateDirector(DT);
+  updateWaveStats(DT);
 
   // Balas jugador
   const turn=activeSynergy==='guided+speed'||overclockTimer>0?0.9:0.5; // CAZADOR DE ÉLITE gira más rápido

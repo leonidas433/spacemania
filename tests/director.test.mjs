@@ -52,29 +52,29 @@ export default async function run(r) {
 
   // ── Selección: anti-repetición, cooldown, mínimos ──────────
   r.t('un evento no se repite inmediatamente', await p.evaluate(() => {
-    startGame(false); waveIdx = 8; cycle = 2;
+    startGame(false); waveIdx = 15; cycle = 2;
     eventDirector.lastEventId = 'courier';
     return eventWeight(eventById('courier'), buildDirectorContext()) === 0;
   }));
   r.t('un evento reciente pierde peso pero sigue siendo elegible', await p.evaluate(() => {
-    startGame(false); waveIdx = 8; cycle = 2;
+    startGame(false); waveIdx = 15; cycle = 2;
     const base = eventWeight(eventById('courier'), buildDirectorContext());
     eventDirector.recentEvents = ['courier'];
     const pen = eventWeight(eventById('courier'), buildDirectorContext());
     return base > 0 && pen > 0 && pen < base;
   }));
   r.t('el cooldown por evento bloquea su reaparición', await p.evaluate(() => {
-    startGame(false); waveIdx = 8; cycle = 2;
+    startGame(false); waveIdx = 15; cycle = 2;
     eventDirector.eventCooldowns.courier = 2;
     return eventWeight(eventById('courier'), buildDirectorContext()) === 0;
   }));
   r.t('cada evento respeta su oleada mínima', await p.evaluate(() => {
-    startGame(false); waveIdx = 2; cycle = 1;
+    startGame(false); waveIdx = 3; cycle = 1;   // papel 'event': admite toda clase
     return eventWeight(eventById('leech'), buildDirectorContext()) === 0
       && eventWeight(eventById('courier'), buildDirectorContext()) > 0;
   }));
   r.t('la amenaza pierde peso con la escena cargada', await p.evaluate(() => {
-    startGame(false); waveIdx = 10; cycle = 2;
+    startGame(false); waveIdx = 15; cycle = 2;
     eventDirector.intensity = 0;
     const calm = eventWeight(eventById('leech'), buildDirectorContext());
     eventDirector.intensity = 90;
@@ -82,7 +82,7 @@ export default async function run(r) {
     return calm > 0 && busy > 0 && busy < calm;
   }));
   r.t('la amenaza no aparece con el jugador a un impacto de morir', await p.evaluate(() => {
-    startGame(false); waveIdx = 10; cycle = 2;
+    startGame(false); waveIdx = 15; cycle = 2;
     const full = eventWeight(eventById('leech'), buildDirectorContext());
     shipHp = 1;
     const low = eventWeight(eventById('leech'), buildDirectorContext());
@@ -90,14 +90,36 @@ export default async function run(r) {
     return low < full;
   }));
   r.t('el techo de amenazas por ciclo se respeta', await p.evaluate(() => {
-    startGame(false); waveIdx = 10; cycle = 2;
+    startGame(false); waveIdx = 15; cycle = 2;
     eventDirector.threatsThisCycle = V4_DIRECTOR.maxThreatPerCycle;
     return eventWeight(eventById('leech'), buildDirectorContext()) === 0;
   }));
 
+  // ── Papeles de oleada ──────────────────────────────────────
+  r.t('cada oleada del ciclo tiene un papel', await p.evaluate(() =>
+    WAVE_ROLES.length === WAVE_COUNT && WAVE_ROLES.every(x => x in ROLE_KINDS)));
+  r.t('las oleadas de introducción y dominio se juegan limpias', await p.evaluate(() => {
+    startGame(false); waveIdx = 12; cycle = 2;      // 12 % 12 = 0 → intro
+    const intro = directorVeto(buildDirectorContext());
+    waveIdx = 13;                                   // mastery
+    const mastery = directorVeto(buildDirectorContext());
+    return intro === 'role-intro' && mastery === 'role-mastery';
+  }));
+  r.t('una oleada de alivio no admite amenazas', await p.evaluate(() => {
+    startGame(false); waveIdx = 17; cycle = 3;      // relief
+    return currentWaveRole() === 'relief'
+      && eventWeight(eventById('leech'), buildDirectorContext()) === 0
+      && eventWeight(eventById('data_rush'), buildDirectorContext()) > 0;
+  }));
+  r.t('una oleada de clímax sí admite amenazas', await p.evaluate(() => {
+    startGame(false); waveIdx = 20; cycle = 3;      // climax
+    return currentWaveRole() === 'climax'
+      && eventWeight(eventById('leech'), buildDirectorContext()) > 0;
+  }));
+
   // ── Pity ───────────────────────────────────────────────────
   r.t('el pity garantiza un evento tras demasiadas oleadas en calma', await p.evaluate(() => {
-    startGame(false); waveIdx = 9; cycle = 2;
+    startGame(false); waveIdx = 15; cycle = 2;
     eventDirector.pityCounter = V4_DIRECTOR.pityAfterWaves;
     eventDirector.wavesSinceEvent = 0;
     eventDirector.rng = () => 0.999;         // el azar diría que no
@@ -388,6 +410,155 @@ export default async function run(r) {
                telegraph: 0.1, duration: 1, cooldownWaves: 1, tags: [] }, 0);
     updateDirector(1); updateDirector(secsToSteps(0.2));
     return eventDirector.active === null && state === 'playing';
+  }));
+
+  // ── Secretos ───────────────────────────────────────────────
+  r.t('un secreto entra sin anunciarse', await p.evaluate(() => {
+    startGame(false); waveIdx = 20; cycle = 3; _srAt = 0; _srLast = '';
+    document.getElementById('sr-live').textContent = '';
+    armEvent(eventById('sol_signal'), 0);
+    updateDirector(1); updateDirector(secsToSteps(0.3));
+    const said = document.getElementById('sr-live').textContent;
+    const active = eventDirector.active.phase === 'active';
+    abortEvent('test');
+    return active && said === '';
+  }));
+  r.t('la señal solitaria se puede localizar y disparar', await p.evaluate(() => {
+    startGame(false); waveIdx = 20; cycle = 3;
+    armEvent(eventById('sol_signal'), 0);
+    updateDirector(1); updateDirector(secsToSteps(0.3));
+    const { x, y } = eventDirector.active.data;
+    const sc0 = score;
+    bullets.push(newBullet(x, y, {}));
+    updateDirector(1);
+    return score > sc0 && eventDirector.active === null && discoveries.has('sol_signal');
+  }));
+  r.t('el fragmento espectral exige pericia previa', await p.evaluate(() => {
+    startGame(false); waveIdx = 17; cycle = 3;   // papel 'relief': admite secretos
+    comboMult = 1; eventDirector.tension = 0;
+    const cold = eventWeight(eventById('ghost_fragment'), buildDirectorContext());
+    comboMult = 8;
+    const hot = eventWeight(eventById('ghost_fragment'), buildDirectorContext());
+    comboMult = 1;
+    return cold === 0 && hot > 0;
+  }));
+  r.t('recogerlo suma fragments de la partida', await p.evaluate(() => {
+    startGame(false); waveIdx = 20; cycle = 3;
+    armEvent(eventById('ghost_fragment'), 0);
+    updateDirector(1); updateDirector(secsToSteps(0.3));
+    const f0 = runFragments;
+    eventDirector.active.data.x = player.x;
+    eventDirector.active.data.y = player.y;
+    updateDirector(1);
+    return runFragments > f0 && discoveries.has('ghost_fragment');
+  }));
+
+  // ── Transmisiones y ruta ───────────────────────────────────
+  r.t('la partida empieza en el sector Alpha', await p.evaluate(() => {
+    startGame(false);
+    return eventDirector.route === 'alpha' && routeScoreMult() === 1 && routeEnemySpeed() === 1;
+  }));
+  r.t('las transmisiones se agotan a las tres', await p.evaluate(() => {
+    startGame(false); waveIdx = 10;
+    eventDirector.rng = () => 0.01;              // siempre pasa el filtro
+    for (let i = 0; i < 10; i++) maybeTransmission();
+    return eventDirector.routeFlags.transmissions === 3 && discoveries.has('unknown_transmission');
+  }));
+  r.t('tres transmisiones abren el sector Eclipse', await p.evaluate(() => {
+    startGame(false); waveIdx = 10;
+    eventDirector.routeFlags.transmissions = 3;
+    evaluateRoute();
+    return eventDirector.route === 'eclipse' && discoveries.has('route_eclipse');
+  }));
+  r.t('un combo normal no basta para abrir Eclipse', await p.evaluate(() => {
+    startGame(false); waveIdx = 10;
+    maxComboRun = 12; eventDirector.routeFlags.nearStreakBest = 8;
+    evaluateRoute();
+    maxComboRun = 1;
+    return eventDirector.route === 'alpha';
+  }));
+  r.t('un combo excepcional también lo abre', await p.evaluate(() => {
+    startGame(false); waveIdx = 10;
+    maxComboRun = 18;
+    evaluateRoute();
+    maxComboRun = 1;
+    return eventDirector.route === 'eclipse';
+  }));
+  r.t('Eclipse multiplica la puntuación en la misma ruta de scoring', await p.evaluate(() => {
+    startGame(false); waveIdx = 10; combo = 0; comboMult = 1; runModifier = null;
+    const base = addScore(100, false);
+    eventDirector.route = 'eclipse';
+    const ecl = addScore(100, false);
+    return base === 100 && ecl === 130;
+  }));
+  r.t('Eclipse acelera la oleada y se ve en el fondo', await p.evaluate(() => {
+    startGame(false);
+    const a = enemySpeedBonus(), ta = currentRoute().tint;
+    eventDirector.route = 'eclipse';
+    const b = enemySpeedBonus(), tb = currentRoute().tint;
+    return b > a && ta === null && tb !== null;
+  }));
+  r.t('Eclipse sube la frecuencia de eventos', await p.evaluate(() =>
+    ROUTES.eclipse.eventBias > ROUTES.alpha.eventBias));
+
+  // ── Anticipación del boss ──────────────────────────────────
+  r.t('el boss se localiza en la oleada correcta', await p.evaluate(() =>
+    bossAtWave(12) && bossAtWave(36) && !bossAtWave(24) && !bossAtWave(0) && !bossAtWave(13)));
+  r.t('la oleada previa al boss se juega sin eventos', await p.evaluate(() => {
+    startGame(false); waveIdx = 11; cycle = 1;
+    return wavesUntilBoss() === 1 && directorVeto(buildDirectorContext()) === 'pre-boss';
+  }));
+  r.t('dos oleadas antes hay señal sutil, una antes aviso claro', await p.evaluate(() => {
+    startGame(false);
+    waveIdx = 10; const two = wavesUntilBoss();
+    waveIdx = 11; const one = wavesUntilBoss();
+    waveIdx = 11; _srAt = 0; _srLast = '';
+    primeBossAnticipation();
+    const warned = /Señal hostil/.test(document.getElementById('sr-live').textContent);
+    return two === 2 && one === 1 && warned;
+  }));
+
+  // ── Objetivos ocultos ──────────────────────────────────────
+  r.t('los objetivos ocultos existen y no se explican al jugador', await p.evaluate(() =>
+    HIDDEN_OBJECTIVES.length >= 3 && HIDDEN_OBJECTIVES.every(o => typeof o.check === 'function')));
+  r.t('una oleada impecable se detecta y premia', await p.evaluate(() => {
+    startGame(false); waveIdx = 6;
+    resetWaveStats();
+    waveStats.shots = 10; waveStats.hits = 12; waveStats.kills = 10;
+    const sc0 = score;
+    checkHiddenObjectives();
+    return score > sc0 && discoveries.has('obj_flawless_wave');
+  }));
+  r.t('una oleada sin daño se detecta', await p.evaluate(() => {
+    startGame(false); waveIdx = 6;
+    resetWaveStats();
+    waveStats.kills = 9; waveStats.damage = 0;
+    checkHiddenObjectives();
+    return discoveries.has('obj_untouched_wave');
+  }));
+  r.t('recibir daño invalida la oleada sin rasguño', await p.evaluate(() => {
+    startGame(false); waveIdx = 6;
+    resetWaveStats();
+    waveStats.kills = 9; waveStats.damage = 1;
+    return HIDDEN_OBJECTIVES.find(o => o.id === 'untouched_wave').check(waveStats) === false;
+  }));
+  r.t('el silencio táctico mide tiempo, no fotogramas', await p.evaluate(() => {
+    startGame(false); resetWaveStats();
+    for (let i = 0; i < 10; i++) updateWaveStats(0.5);   // 5 pasos en 10 ticks
+    return Math.abs(waveStats.maxNoFire - 5) < 0.001;
+  }));
+  r.t('disparar reinicia la racha de silencio', await p.evaluate(() => {
+    startGame(false); resetWaveStats();
+    updateWaveStats(100);
+    const before = waveStats.maxNoFire;
+    lastFireFrame = -999; fireBullet();
+    return before >= 100 && waveStats.noFire === 0 && waveStats.maxNoFire >= 100;
+  }));
+  r.t('recibir daño corta la racha de esquivas', await p.evaluate(() => {
+    startGame(false);
+    eventDirector.routeFlags.nearStreak = 5;
+    shieldActive = false; playerHit();
+    return eventDirector.routeFlags.nearStreak === 0;
   }));
 
   // ── Compatibilidad ─────────────────────────────────────────

@@ -36,6 +36,13 @@ export default async function run(r) {
     !/<script[^>]+src=|<link[^>]+href=["']https?:/i.test(html));
   r.t('no reconstruye los arrays calientes por frame',
     !/(bullets|particles|trails)\s*=\s*(bullets|particles|trails)\.filter/.test(html));
+  // Invariantes de v4: el director no puede introducir temporización por fotograma
+  // ni azar sin semilla, porque rompería el Daily y los tests deterministas.
+  const director = (html.match(/function (planWaveEvent|pickEvent|eventWeight|updateDirector|armEvent)[\s\S]*?\n}/g) || []).join('\n');
+  r.t('el director existe y no usa azar sin semilla',
+    director.length > 0 && !/Math\.random/.test(director));
+  r.t('el director no temporiza por fotograma',
+    director.length > 0 && !/frame\s*%/.test(director));
 
   const size = fs.statSync(GAME_FILE).size;
   r.t('el archivo no supera 400 KB', size < 400 * 1024);

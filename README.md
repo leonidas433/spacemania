@@ -1,6 +1,6 @@
 # SpaceMania 🚀
 
-**retro-game-mania · 2026 Edition · v3.3.0**
+**retro-game-mania · 2026 Edition · v4.0.0**
 
 Un shooter arcade de ciencia ficción inspirado en los clásicos de los 80.  
 Combate oleadas de objetos del mundo digital moderno en una pesadilla espacial.
@@ -151,6 +151,56 @@ Cada tipo de enemigo derrotado se cataloga con sprite y lore. Completarla da +5%
 
 ---
 
+## 🎬 Event Director (v4)
+El juego deja de ser una fila de oleadas conocidas.
+
+Por encima de las oleadas hay un director que decide **qué puede pasar y
+cuándo**. No mueve enemigos: arma situaciones que reutilizan las mismas
+entidades, colisiones y puntuación de siempre.
+
+La regla es que puedas prever la lógica pero no el momento ni la combinación.
+Toda amenaza avisa antes de poder hacerte daño.
+
+### Cómo decide
+- Selección por pesos con azar sembrado. En el Daily usa la semilla del día, así
+  su secuencia de eventos es reproducible
+- Anti-repetición y enfriamiento por evento: nunca dos iguales seguidos
+- Si pasan cuatro oleadas en calma, el siguiente evento está garantizado
+- Mide la presión de la escena cuatro veces por segundo. Con la pantalla cargada
+  la amenaza pierde peso y la recompensa lo gana
+- Cada oleada del ciclo tiene un papel: introducción, dominio, escalada, evento,
+  combinación, alivio, clímax o previa de jefe. El papel decide qué encaja
+
+### Los 10 eventos
+| Evento | Clase | Qué cambia |
+|---|---|---|
+| Mensajero de datos | bonus | Objetivo blindado que cruza la pantalla. Puntos, fragmentos y power-up si cae |
+| Blancos de precisión | bonus | Tres objetivos de alto valor. Bonus si caen los tres |
+| Lluvia de datos | bonus | Fragmentos por toda la pantalla. ¿Cuánto riesgo vale la economía? |
+| Parásito de señal | amenaza | Acelera la cadencia de toda la oleada mientras viva |
+| Cazador | amenaza | Marca el suelo y dispara a la marca. Moverse siempre funciona |
+| Señal falsa | sorpresa | Cápsula falsa. Se revela a media pantalla; recogerla cuesta energía |
+| Eco fantasma | sorpresa | Se desvanece y reaparece donde marca su silueta |
+| Duplicado | sorpresa | Copias temporales, frágiles y mudas |
+| Señal solitaria | secreto | Un punto tenue sin anuncio. Verlo es el juego |
+| Fragmento espectral | secreto | Solo aparece tras combo alto o racha de esquivas |
+
+### Rutas
+La partida empieza en **Sector Alpha**. Con tres transmisiones desconocidas, con
+combo 18 o con doce esquivas encadenadas se abre el **Sector Eclipse**: más
+eventos, oleadas un 12% más rápidas y puntuación por 1,3. Se ve en el fondo y se
+anuncia con claridad.
+
+### Objetivos ocultos
+Cuatro, y el juego no los explica: oleada impecable, sin un rasguño, baile de
+balas y silencio táctico. Al cumplirse quedan registrados en la Galería.
+
+### Anticipación del jefe
+Dos oleadas antes hay una señal sutil. Una antes, un aviso inequívoco. La
+entrada llega tras un silencio breve. El jefe deja de aparecer de repente.
+
+---
+
 ## ⏱ Reloj de simulación
 El juego corre a la misma velocidad en cualquier pantalla.
 
@@ -230,10 +280,13 @@ npm install && npx playwright install chromium
 npm test
 ```
 
-98 comprobaciones en siete suites: sintaxis del archivo único, reloj de simulación,
-tabla de puntuaciones, contador de visitas, tutorial, calidad adaptativa y
-accesibilidad, y escalado del lienzo. Tardan unos veinte segundos y corren en cada
-push vía GitHub Actions. Detalle en `tests/README.md`.
+172 comprobaciones en ocho suites: sintaxis del archivo único, reloj de simulación,
+Event Director, tabla de puntuaciones, contador de visitas, tutorial, calidad
+adaptativa y accesibilidad, y escalado del lienzo. Tardan unos veinticinco segundos
+y corren en cada push vía GitHub Actions. Detalle en `tests/README.md`.
+
+Para medir ritmo y variedad en partidas reales:
+`node tests/tools/v4-probe.mjs <minutos> <partidas>`.
 
 ---
 
@@ -276,6 +329,7 @@ Archivo estático dentro del vhost Plesk de webdoctor.es (`/var/www/vhosts/webdo
 | 3.1.0 | 2026-09-06 | Balance tras playtest (economía de fragments, cadencia, Ascensión, drops, boss cada 2 ciclos) + top 20 con nombre de jugador |
 | 3.2.0 | 2026-09-07 | Calidad adaptativa y reservas de objetos, anuncios para lector de pantalla, hitbox indulgente, formas de bala enemiga, Ascenso de Flota, licencia MIT |
 | 3.3.0 | 2026-09-07 | La simulación deja de depender de la tasa de refresco; suite de pruebas y CI dentro del repositorio |
+| 4.0.0 | 2026-09-07 | Event Director: 10 eventos, papeles de pacing, dos rutas, tres secretos, objetivos ocultos y anticipación del jefe |
 
 ---
 
