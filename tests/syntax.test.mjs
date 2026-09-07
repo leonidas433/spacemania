@@ -33,7 +33,8 @@ export default async function run(r) {
   r.t('no usa WebGL: el render sigue siendo Canvas 2D',
     !/webgl|gl_Position|createShader|drawArraysInstanced/i.test(html));
   r.t('no carga dependencias externas',
-    !/<script[^>]+src=|<link[^>]+href=["']https?:/i.test(html));
+    // canonical/og son metadatos, no recursos cargados: solo cuentan script[src] y <link> externos que no sean canonical
+    !/<script[^>]+src=|<link(?![^>]*rel=["']canonical)[^>]+href=["']https?:/i.test(html));
   r.t('no reconstruye los arrays calientes por frame',
     !/(bullets|particles|trails)\s*=\s*(bullets|particles|trails)\.filter/.test(html));
   // Invariantes de v4: el director no puede introducir temporización por fotograma
