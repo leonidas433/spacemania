@@ -421,7 +421,9 @@ export default async function run(r) {
     const said = document.getElementById('sr-live').textContent;
     const active = eventDirector.active.phase === 'active';
     abortEvent('test');
-    return active && said === '';
+    // Puede haber hablado el compás de la oleada; lo que no debe aparecer es
+    // vocabulario de evento: eso delataría el secreto antes de descubrirlo
+    return active && !/Señal detectada|Señal hostil|Evento:|SOLITARIA/i.test(said);
   }));
   r.t('la señal solitaria se puede localizar y disparar', await p.evaluate(() => {
     startGame(false); waveIdx = 20; cycle = 3;
@@ -464,22 +466,22 @@ export default async function run(r) {
     for (let i = 0; i < 10; i++) maybeTransmission();
     return eventDirector.routeFlags.transmissions === 3 && discoveries.has('unknown_transmission');
   }));
-  r.t('tres transmisiones abren el sector Eclipse', await p.evaluate(() => {
+  r.t('las transmisiones repetidas abren el sector Eclipse', await p.evaluate(() => {
     startGame(false); waveIdx = 10;
-    eventDirector.routeFlags.transmissions = 3;
+    eventDirector.routeFlags.transmissions = 2;
     evaluateRoute();
     return eventDirector.route === 'eclipse' && discoveries.has('route_eclipse');
   }));
   r.t('un combo normal no basta para abrir Eclipse', await p.evaluate(() => {
     startGame(false); waveIdx = 10;
-    maxComboRun = 12; eventDirector.routeFlags.nearStreakBest = 8;
+    maxComboRun = 11; eventDirector.routeFlags.nearStreakBest = 6;
     evaluateRoute();
     maxComboRun = 1;
     return eventDirector.route === 'alpha';
   }));
   r.t('un combo excepcional también lo abre', await p.evaluate(() => {
     startGame(false); waveIdx = 10;
-    maxComboRun = 18;
+    maxComboRun = 14;
     evaluateRoute();
     maxComboRun = 1;
     return eventDirector.route === 'eclipse';
@@ -500,6 +502,37 @@ export default async function run(r) {
   }));
   r.t('Eclipse sube la frecuencia de eventos', await p.evaluate(() =>
     ROUTES.eclipse.eventBias > ROUTES.alpha.eventBias));
+
+  // ── Ticker de pacing ───────────────────────────────────────
+  r.t('cada papel de oleada tiene su compás', await p.evaluate(() =>
+    WAVE_ROLES.every(rl => V4_PACING[rl] && V4_PACING[rl].text)));
+  r.t('el ticker no es una segunda región viva', await p.evaluate(() =>
+    !document.getElementById('director-hud').hasAttribute('aria-live')));
+  r.t('el ticker solo escribe en el DOM cuando cambia', await p.evaluate(() => {
+    startGame(false); waveIdx = 15;
+    updateDirectorHud();
+    const el = document.getElementById('director-hud');
+    let writes = 0;
+    const node = el.firstChild;
+    for (let i = 0; i < 30; i++) updateDirectorHud();
+    // Si reescribiera cada vez, el nodo de texto sería otro
+    return el.firstChild === node;
+  }));
+  r.t('el compás no pisa el nombre de la oleada', await p.evaluate(() => {
+    startGame(false); waveIdx = 8; cycle = 2;
+    spawnWave();
+    const centre = document.getElementById('wave-announce').textContent;
+    return /WAVE/.test(centre);
+  }));
+  r.t('la señal de un evento no se queda sin voz por el compás', await p.evaluate(() => {
+    startGame(false); waveIdx = 20; cycle = 3;
+    _srAt = Date.now(); _srLast = 'ALGO VIENE';       // acaba de hablar el compás
+    armEvent(eventById('leech'), 1);
+    updateDirector(2);
+    const said = document.getElementById('sr-live').textContent;
+    abortEvent('test');
+    return /Señal hostil/.test(said);
+  }));
 
   // ── Anticipación del boss ──────────────────────────────────
   r.t('el boss se localiza en la oleada correcta', await p.evaluate(() =>
