@@ -862,13 +862,34 @@ const SPACE_EVENTS=[
     telegraph:0.7, duration:6, cooldownWaves:2, canRepeat:false,
     tags:['skill','reward'] },
   { id:'precision_drill', kind:'bonus', label:'BLANCOS DE PRECISIÓN', color:'#4ff',
-    minCycle:1, minWave:3, weight:9, intensity:14,
+    minCycle:1, minWave:3, weight:7, intensity:14,
     telegraph:0.5, duration:7, cooldownWaves:2, canRepeat:false,
     tags:['skill','reward'] },
   { id:'leech', kind:'threat', label:'PARÁSITO DE SEÑAL', color:'#f84',
     minCycle:1, minWave:4, weight:8, intensity:34,
     telegraph:0.9, duration:9, cooldownWaves:3, canRepeat:false,
     tags:['priority','threat'] },
+  // Fase 2
+  { id:'data_rush', kind:'bonus', label:'LLUVIA DE DATOS', color:'#c6f',
+    minCycle:1, minWave:3, weight:8, intensity:6,
+    telegraph:0.4, duration:6, cooldownWaves:3, canRepeat:false,
+    tags:['reward','relief'] },
+  { id:'mimic_drop', kind:'surprise', label:'SEÑAL FALSA', color:'#f4a',
+    minCycle:1, minWave:5, weight:8, intensity:16,
+    telegraph:0.6, duration:9, cooldownWaves:3, canRepeat:false,
+    tags:['attention','trap'] },
+  { id:'glitch_duplicate', kind:'surprise', label:'DUPLICADO', color:'#8ff',
+    minCycle:1, minWave:6, weight:7, intensity:22,
+    telegraph:0.5, duration:7, cooldownWaves:3, canRepeat:false,
+    tags:['attention'] },
+  { id:'phantom_formation', kind:'surprise', label:'ECO FANTASMA', color:'#e4a',
+    minCycle:2, minWave:8, weight:7, intensity:26,
+    telegraph:0.6, duration:11, cooldownWaves:3, canRepeat:false,
+    tags:['attention','skill'] },
+  { id:'hunter', kind:'threat', label:'CAZADOR', color:'#f44',
+    minCycle:2, minWave:10, weight:7, intensity:42,
+    telegraph:0.9, duration:11, cooldownWaves:4, canRepeat:false,
+    tags:['priority','threat','skill'] },
 ];
 function eventById(id){ return SPACE_EVENTS.find(e=>e.id===id)||null; }
 function secsToSteps(s){ return s*60; }
@@ -1326,6 +1347,231 @@ function resolveLeechEvent(a,outcome){
 }
 function abortLeechEvent(a){ clearLeechBoost(a); }
 
+
+// ── V4 · EVENTOS FASE 2 ──────────────────────────────────────
+// SEÑAL FALSA (mimic) — sorpresa.
+// Cambia: cae algo con aspecto de power-up. A media caída se revela.
+// Riesgo: recogerlo tras la revelación cuesta energía. Nunca mata.
+// Señal: 0,6 s de evento + la propia revelación a mitad de pantalla.
+// Respuesta: no recogerlo, o destruirlo a tiros.
+// Premio: destruirlo da puntos y registro; ignorarlo no cuesta nada.
+function startMimicEvent(a){
+  const fake=POWERUP_TYPES[Math.floor(dRnd()*POWERUP_TYPES.length)];
+  const m={ x:60+dRnd()*(W-120), y:-24, vy:1.5, type:fake, mimic:true, revealed:false, hp:2 };
+  powerups.push(m);
+  a.data.mimic=m;
+  announce('Señal falsa entre las cápsulas');
+}
+function updateMimicEvent(a){
+  const m=a.data.mimic;
+  if(!m||m.dead) return;
+  if(powerups.indexOf(m)<0){ resolveEvent(m.taken?'missed':'completed'); return; }
+  // Revelación a mitad de recorrido: mucho antes de llegar al jugador
+  if(!m.revealed&&m.y>H*0.45){
+    m.revealed=true;
+    SFX_V4.threat();
+    addFloat(m.x,m.y-20,'¡SEÑAL FALSA!','#f4a');
+    announce('La cápsula era una señal falsa');
+    if(!reducedMotion) screenShake=Math.max(screenShake,3);
+  }
+}
+function resolveMimicEvent(a,outcome){
+  const m=a.data.mimic;
+  if(m){ const i=powerups.indexOf(m); if(i>=0) powerups.splice(i,1); }
+  if(outcome==='completed'){
+    const pts=addScore(280+cycle*90,true);
+    addFloat(player.x,player.y-50,'SEÑAL FALSA NEUTRALIZADA +'+pts,'#f4a');
+    SFX_V4.reward();
+    announce('Señal falsa neutralizada');
+    registerDiscovery('mimic_drop');
+  }
+}
+function abortMimicEvent(a){
+  const m=a.data.mimic;
+  if(m){ const i=powerups.indexOf(m); if(i>=0) powerups.splice(i,1); }
+}
+
+// ECO FANTASMA (phantom) — sorpresa.
+// Cambia: un trío aparece, se desvanece y reaparece desplazado.
+// Riesgo: pierdes la referencia de a quién estabas apuntando.
+// Señal: 0,6 s de evento + silueta parpadeante en el destino antes de volver.
+// Respuesta: leer la silueta y reposicionarse. Mientras están desvanecidos no
+// disparan ni reciben daño, así que nadie muere por algo invisible.
+// Premio: valen el doble de lo normal.
+const PHANTOM_PHASE=110;   // ~1,8 s desvanecidos
+function startPhantomEvent(a){
+  a.data.list=[];
+  for(let i=0;i<3;i++){
+    const e=spawnEventEnemy({
+      shape:'deepfake', eventId:'phantom_formation',
+      x:170+i*230, y:90+dRnd()*40,
+      props:{ pattern:'hover', size:18, color:'#e4a', pts:0, speed:1.1,
+              phaseTimer:150+i*30, phased:false, ghostX:0, ghostY:0 },
+    });
+    a.data.list.push(e);
+  }
+}
+function updatePhantomEvent(a,dt){
+  const list=a.data.list||[];
+  for(let i=0;i<list.length;i++){
+    const e=list[i];
+    if(!e.alive) continue;
+    e.phaseTimer-=dt;
+    if(e.phaseTimer<=0){
+      if(!e.phased){
+        // Se desvanece y anuncia dónde volverá
+        e.phased=true; e.phaseTimer=PHANTOM_PHASE;
+        e.ghostX=60+dRnd()*(W-120); e.ghostY=80+dRnd()*70;
+        SFX_V4.signal();
+      } else {
+        e.phased=false; e.phaseTimer=190+dRnd()*90;
+        e.x=e.bx=e.ghostX; e.y=e.by=e.ghostY;
+        spawnParticles(e.x,e.y,'#e4a',LOW_FX?4:10);
+      }
+    }
+    if(e.phased){
+      // Silueta del destino: la información llega antes que la amenaza
+      cx.save();
+      cx.globalAlpha=reducedMotion?0.45:0.25+Math.sin(frame*0.25)*0.2;
+      cx.strokeStyle='#e4a'; cx.lineWidth=1.4;
+      cx.setLineDash([4,4]);
+      cx.beginPath(); cx.arc(e.ghostX,e.ghostY,e.size+3,0,Math.PI*2); cx.stroke();
+      cx.setLineDash([]);
+      cx.restore();
+    }
+  }
+}
+function onPhantomKill(a,e){
+  const pts=addScore(240+cycle*80,true);
+  addFloat(e.x,e.y-16,'+'+pts,'#e4a');
+  const list=a.data.list||[];
+  if(list.every(x=>!x.alive)) resolveEvent('completed');
+}
+function resolvePhantomEvent(a,outcome){
+  if(outcome==='completed'){
+    const b=addScore(400+cycle*120,true);
+    addFloat(player.x,player.y-50,'ECO DISIPADO +'+b,'#e4a');
+    SFX_V4.reward();
+    announce('Eco fantasma disipado');
+    registerDiscovery('phantom_formation');
+  }
+}
+
+// DUPLICADO (glitch) — sorpresa.
+// Cambia: varios enemigos de la oleada generan una copia temporal.
+// Riesgo: más objetivos y confusión momentánea. Las copias no disparan.
+// Señal: 0,5 s de evento + las copias parpadean y llevan anillo propio.
+// Respuesta: dispararlas (caen de un tiro) o ignorarlas: se disipan solas.
+// Premio: puntos pequeños por copia y bonus si caen todas.
+function startGlitchEvent(a){
+  const src=enemies.filter(e=>e.alive&&!e.ephemeral);
+  a.data.list=[]; a.data.spawned=0;
+  const n=Math.min(4,src.length);
+  for(let i=0;i<n;i++){
+    const o=src[Math.floor(dRnd()*src.length)];
+    if(!o) continue;
+    const e=spawnEventEnemy({
+      shape:o.shape, eventId:'glitch_duplicate',
+      x:Math.max(30,Math.min(W-30,o.x+(dRnd()-0.5)*90)), y:o.y+(dRnd()-0.5)*30,
+      props:{ pattern:'hover', size:Math.max(12,o.size-4), color:o.color, pts:0, speed:1.4, glitch:true },
+    });
+    a.data.list.push(e); a.data.spawned++;
+  }
+  if(!a.data.spawned){ resolveEvent('missed'); return; }
+  announce('Duplicado: copias temporales en la oleada');
+}
+function onGlitchKill(a,e){
+  const pts=addScore(90+cycle*30,true);
+  addFloat(e.x,e.y-14,'+'+pts,e.color);
+  const list=a.data.list||[];
+  if(list.every(x=>!x.alive)) resolveEvent('completed');
+}
+function resolveGlitchEvent(a,outcome){
+  if(outcome==='completed'){
+    const b=addScore(300+cycle*100,true);
+    addFloat(player.x,player.y-50,'COPIAS PURGADAS +'+b,'#8ff');
+    SFX_V4.reward();
+    announce('Copias purgadas');
+    registerDiscovery('glitch_duplicate');
+  }
+}
+
+// CAZADOR (hunter) — amenaza.
+// Cambia: un enemigo de élite marca el suelo bajo la nave y dispara ahí.
+// Riesgo: quedarse quieto duele. Obliga a moverse.
+// Señal: 0,9 s de evento + marca visible 1 s antes de cada disparo.
+// Respuesta: salir de la marca. El disparo va a la marca, no a ti.
+// Premio: matarlo da puntos altos y termina el evento.
+const HUNTER_AIM=70;      // ~1,2 s de marca antes de disparar
+function startHunterEvent(a){
+  const e=spawnEventEnemy({
+    shape:'drone', eventId:'hunter',
+    x:W/2+(dRnd()-0.5)*300, y:70,
+    props:{ pattern:'hover', size:22, color:'#f44', pts:0, speed:1.6, hp:5,
+            hunter:true, aimTimer:HUNTER_AIM, markX:player.x, aiming:true },
+  });
+  a.data.enemy=e;
+  announce('Cazador: marca el suelo antes de disparar. Muévete');
+}
+function updateHunterEvent(a,dt){
+  const e=a.data.enemy;
+  if(!e||!e.alive) return;
+  e.aimTimer-=dt;
+  if(e.aiming){
+    if(e.aimTimer<=0){
+      // Dispara a la marca, no al jugador: la marca es el contrato de justicia
+      e.ebullets.push({x:e.x,y:e.y+14,vx:(e.markX-e.x)/60,vy:4.2});
+      SFX.telegraph();
+      e.aiming=false; e.aimTimer=90+dRnd()*60;
+    }
+  } else if(e.aimTimer<=0){
+    e.aiming=true; e.aimTimer=HUNTER_AIM; e.markX=player.x;
+    SFX_V4.signal();
+  }
+  if(e.aiming){
+    const p=1-Math.max(0,e.aimTimer)/HUNTER_AIM;
+    cx.save();
+    cx.globalAlpha=reducedMotion?0.55:0.3+p*0.5;
+    cx.strokeStyle='#f44'; cx.lineWidth=2;
+    cx.beginPath(); cx.moveTo(e.markX-16,player.y+12); cx.lineTo(e.markX+16,player.y+12); cx.stroke();
+    cx.beginPath(); cx.moveTo(e.markX,player.y-4); cx.lineTo(e.markX,player.y+12); cx.stroke();
+    cx.restore();
+  }
+}
+function onHunterKill(a){ resolveEvent('completed'); }
+function resolveHunterEvent(a,outcome){
+  if(outcome==='completed'){
+    const pts=addScore(650+cycle*180,true);
+    addFloat(player.x,player.y-50,'CAZADOR ABATIDO +'+pts,'#f44');
+    SFX_V4.reward(); if(!reducedMotion) screenFlash(0.3);
+    announce('Cazador abatido');
+    registerDiscovery('hunter');
+    eventDirector.intensity=Math.max(0,eventDirector.intensity-25);
+  } else {
+    addFloat(W/2,H/2-40,'EL CAZADOR SE RETIRA','#a66');
+    SFX_V4.escape();
+  }
+}
+
+// LLUVIA DE DATOS (data_rush) — bonus.
+// Cambia: caen mini-fragmentos por toda la pantalla durante unos segundos.
+// Riesgo: recogerlos obliga a moverte por zonas que no elegirías.
+// Señal: 0,4 s. Respuesta: decidir cuánto riesgo asumes por la economía.
+// Premio: fragments directos, que es la moneda del Hangar.
+function startDataRushEvent(a){ a.data.acc=0; a.data.dropped=0; }
+function updateDataRushEvent(a,dt){
+  a.data.acc+=dt;
+  if(a.data.acc>=10){                 // uno cada ~6 por segundo
+    a.data.acc-=10;
+    spawnMiniFrag(40+dRnd()*(W-80),-10);
+    a.data.dropped++;
+  }
+}
+function resolveDataRushEvent(a){
+  addFloat(player.x,player.y-50,'LLUVIA DE DATOS','#c6f');
+  registerDiscovery('data_rush');
+}
+
 const EVENT_HANDLERS={
   courier:{ start:startCourierEvent, update:updateCourierEvent, onKill:onCourierKill,
             resolve:resolveCourierEvent },
@@ -1333,6 +1579,16 @@ const EVENT_HANDLERS={
                     resolve:resolvePrecisionEvent },
   leech:{ start:startLeechEvent, update:updateLeechEvent, onKill:onLeechKill,
           resolve:resolveLeechEvent, abort:abortLeechEvent },
+  data_rush:{ start:startDataRushEvent, update:updateDataRushEvent,
+              resolve:resolveDataRushEvent, timeoutOutcome:()=>'completed' },
+  mimic_drop:{ start:startMimicEvent, update:updateMimicEvent,
+               resolve:resolveMimicEvent, abort:abortMimicEvent },
+  glitch_duplicate:{ start:startGlitchEvent, onKill:onGlitchKill,
+                     resolve:resolveGlitchEvent },
+  phantom_formation:{ start:startPhantomEvent, update:updatePhantomEvent,
+                      onKill:onPhantomKill, resolve:resolvePhantomEvent },
+  hunter:{ start:startHunterEvent, update:updateHunterEvent, onKill:onHunterKill,
+           resolve:resolveHunterEvent },
 };
 
 // ── V4 · DESCUBRIMIENTOS ─────────────────────────────────────
@@ -1751,6 +2007,24 @@ function drawShape(x,y,shape,color,size){
 function drawPowerupItem(pu){
   const {x,y,type}=pu;
   const pulse=Math.sin(Date.now()*.006)*.25+.75;
+  // v4: una señal falsa ya revelada se distingue por forma, no solo por color
+  if(pu.mimic&&pu.revealed){
+    cx.save();
+    cx.globalAlpha=reducedMotion?0.9:pulse;
+    cx.strokeStyle='#f4a'; cx.fillStyle='#f4a22'; cx.lineWidth=2;
+    cx.beginPath();
+    for(let i=0;i<8;i++){
+      const ang=i*Math.PI/4, rad=i%2?7:15;
+      const px=x+Math.cos(ang)*rad, py=y+Math.sin(ang)*rad;
+      i?cx.lineTo(px,py):cx.moveTo(px,py);
+    }
+    cx.closePath(); cx.fill(); cx.stroke();
+    cx.fillStyle='#f4a'; cx.font='bold 11px Courier New';
+    cx.textAlign='center'; cx.textBaseline='middle';
+    cx.fillText('✗',x,y+1);
+    cx.restore();
+    return;
+  }
   cx.save(); cx.globalAlpha=pulse;
   cx.strokeStyle=type.color; cx.fillStyle=type.color+'22'; cx.lineWidth=2;
   cx.beginPath(); cx.arc(x,y,14,0,Math.PI*2); cx.fill(); cx.stroke();
@@ -2487,7 +2761,7 @@ function checkCollisions(){
     // vs enemigos normales
     let impacted=false;
     for(let e of enemies){
-      if(!e.alive||b.hitList.includes(e)) continue;
+      if(!e.alive||e.phased||b.hitList.includes(e)) continue;
       const hw=e.size*1.1, hh=e.size*0.9;
       if(Math.abs(b.x-e.x)<hw&&Math.abs(b.y-e.y)<hh){
         impacted=true; shotsHit++;
@@ -2510,6 +2784,23 @@ function checkCollisions(){
       }
     }
     if(impacted) continue;
+
+    // v4: la señal falsa se puede neutralizar a tiros
+    let mimicHit=false;
+    for(let k=0;k<powerups.length;k++){
+      const pu=powerups[k];
+      if(!pu.mimic) continue;
+      if(Math.abs(b.x-pu.x)<16&&Math.abs(b.y-pu.y)<16){
+        shotsHit++;
+        pu.hp--;
+        spawnParticles(pu.x,pu.y,'#f4a',LOW_FX?3:7);
+        if(pu.hp<=0){ pu.dead=true; powerups.splice(k,1); resolveEvent('completed'); }
+        if(b.pierce>0){ b.pierce--; } else b.hit=true;
+        mimicHit=true;
+        break;
+      }
+    }
+    if(mimicHit) continue;
 
     // vs minions cuánticos
     for(let m of bossMinions){
@@ -2593,7 +2884,16 @@ function checkCollisions(){
   const toRemove=[];
   powerups.forEach(pu=>{
     if(Math.abs(pu.x-player.x)<26&&Math.abs(pu.y-player.y)<22){
-      activatePowerup(pu.type); toRemove.push(pu);
+      if(pu.mimic){
+        // Coste real, nunca letal: la trampa se paga en energía
+        pu.taken=true;
+        energy=Math.max(12,energy-30);
+        addFloat(player.x,player.y-34,'SEÑAL FALSA −ENERGÍA','#f4a');
+        SFX.powerDown();
+        announce('Has recogido una señal falsa. Pierdes energía');
+        if(!reducedMotion) screenShake=Math.max(screenShake,4);
+      } else activatePowerup(pu.type);
+      toRemove.push(pu);
     }
   });
   powerups=powerups.filter(pu=>!toRemove.includes(pu));
@@ -3133,9 +3433,13 @@ function loop(ts){
 
   // Enemigos
   enemies.forEach(e=>{
-    movePattern(e);
     if(e.flash>0) e.flash-=DT;
+    // v4: un eco desvanecido no está en el campo. Su silueta la pinta el evento
+    if(e.phased) return;
+    movePattern(e);
+    if(e.glitch) cx.save(), cx.globalAlpha=reducedMotion?0.75:0.55+Math.sin(frame*0.35)*0.25;
     drawShape(e.x,e.y,e.shape,e.flash>0?'#fff':e.color,e.size);
+    if(e.glitch) cx.restore();
     if(e.ephemeral) drawEventMark(e,e.color);
     const diff=DIFF[difficulty];
     e.shootTimer-=DT;

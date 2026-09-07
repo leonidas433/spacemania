@@ -254,6 +254,142 @@ export default async function run(r) {
       && eventDirector.stats.completed === 1 && discoveries.has('precision_drill');
   }));
 
+  // ── Eventos de fase 2 ──────────────────────────────────────
+  const arm = (id) => p.evaluate((id) => {
+    startGame(false); waveIdx = 20; cycle = 3;
+    armEvent(eventById(id), 0);
+    updateDirector(1); updateDirector(secsToSteps(1.2));
+    return eventDirector.active ? eventDirector.active.phase : null;
+  }, id);
+
+  r.t('la señal falsa cae disfrazada y se revela a media pantalla', await p.evaluate(() => {
+    startGame(false); waveIdx = 20; cycle = 3;
+    armEvent(eventById('mimic_drop'), 0);
+    updateDirector(1); updateDirector(secsToSteps(1));
+    const m = powerups.find(x => x.mimic);
+    const hidden = m && !m.revealed && !!m.type;
+    m.y = H * 0.5;
+    updateDirector(1);
+    const shown = m.revealed;
+    abortEvent('test');
+    return hidden && shown;
+  }));
+  r.t('recogerla cuesta energía pero nunca una vida', await p.evaluate(() => {
+    startGame(false); waveIdx = 20; cycle = 3;
+    armEvent(eventById('mimic_drop'), 0);
+    updateDirector(1); updateDirector(secsToSteps(1));
+    const m = powerups.find(x => x.mimic);
+    const hp0 = shipHp, lives0 = lives, pu0 = activePowerupIds().length;
+    energy = 100; m.x = player.x; m.y = player.y;
+    checkCollisions();
+    const ok = energy < 100 && shipHp === hp0 && lives === lives0
+      && activePowerupIds().length === pu0;
+    abortEvent('test');
+    return ok;
+  }));
+  r.t('se puede neutralizar a tiros y da recompensa', await p.evaluate(() => {
+    startGame(false); waveIdx = 20; cycle = 3;
+    armEvent(eventById('mimic_drop'), 0);
+    updateDirector(1); updateDirector(secsToSteps(1));
+    const m = powerups.find(x => x.mimic);
+    const sc0 = score;
+    m.hp = 1;
+    bullets.push(newBullet(m.x, m.y, {}));
+    checkCollisions();
+    return score > sc0 && eventDirector.active === null && discoveries.has('mimic_drop');
+  }));
+
+  r.t('el eco desvanecido no se puede golpear ni golpea', await p.evaluate(() => {
+    startGame(false); waveIdx = 20; cycle = 3;
+    armEvent(eventById('phantom_formation'), 0);
+    updateDirector(1); updateDirector(secsToSteps(1));
+    const e = enemies.find(x => x.eventId === 'phantom_formation');
+    e.phaseTimer = 0;
+    updateDirector(1);
+    const phased = e.phased && e.ghostX > 0;
+    bullets.push(newBullet(e.x, e.y, {}));
+    const alive0 = e.alive;
+    checkCollisions();
+    const survived = e.alive === alive0;
+    abortEvent('test');
+    return phased && survived;
+  }));
+  r.t('el eco reaparece desplazado donde marcaba la silueta', await p.evaluate(() => {
+    startGame(false); waveIdx = 20; cycle = 3;
+    armEvent(eventById('phantom_formation'), 0);
+    updateDirector(1); updateDirector(secsToSteps(1));
+    const e = enemies.find(x => x.eventId === 'phantom_formation');
+    e.phaseTimer = 0; updateDirector(1);
+    const gx = e.ghostX, gy = e.ghostY;
+    e.phaseTimer = 0; updateDirector(1);
+    abortEvent('test');
+    return !e.phased && e.x === gx && e.y === gy;
+  }));
+
+  r.t('el duplicado copia enemigos de la oleada y son más frágiles', await p.evaluate(() => {
+    startGame(false); waveIdx = 20; cycle = 3;
+    const base = enemies.filter(e => !e.ephemeral);
+    armEvent(eventById('glitch_duplicate'), 0);
+    updateDirector(1); updateDirector(secsToSteps(1));
+    const copies = enemies.filter(e => e.glitch);
+    const smaller = copies.every(c => base.some(b => b.shape === c.shape && c.size < b.size));
+    const quiet = copies.every(c => c.shootTimer > 1e8);
+    abortEvent('test');
+    return copies.length > 0 && smaller && quiet;
+  }));
+  r.t('purgar todas las copias completa el evento', await p.evaluate(() => {
+    startGame(false); waveIdx = 20; cycle = 3;
+    armEvent(eventById('glitch_duplicate'), 0);
+    updateDirector(1); updateDirector(secsToSteps(1));
+    const sc0 = score;
+    enemies.filter(e => e.glitch).forEach(e => killEnemy(e, { cause: 'bullet' }));
+    return score > sc0 && eventDirector.active === null && discoveries.has('glitch_duplicate');
+  }));
+
+  r.t('el cazador marca el suelo antes de disparar', await p.evaluate(() => {
+    startGame(false); waveIdx = 20; cycle = 3;
+    armEvent(eventById('hunter'), 0);
+    updateDirector(1); updateDirector(secsToSteps(1));
+    const e = enemies.find(x => x.eventId === 'hunter');
+    const aiming = e.aiming && e.aimTimer > 0 && e.ebullets.length === 0;
+    const mark = e.markX;
+    e.aimTimer = 0; updateDirector(1);
+    const fired = e.ebullets.length === 1;
+    // El disparo va a la marca, no a la posición actual del jugador
+    const b = e.ebullets[0];
+    const goesToMark = Math.sign(b.vx) === Math.sign(mark - e.x) || Math.abs(mark - e.x) < 2;
+    abortEvent('test');
+    return aiming && fired && goesToMark;
+  }));
+  r.t('el cazador aguanta varios impactos', await p.evaluate(() => {
+    startGame(false); waveIdx = 20; cycle = 3;
+    armEvent(eventById('hunter'), 0);
+    updateDirector(1); updateDirector(secsToSteps(1));
+    const e = enemies.find(x => x.eventId === 'hunter');
+    return e.hp >= 4;
+  }));
+
+  r.t('la lluvia de datos suelta fragmentos a lo largo del evento', await p.evaluate(() => {
+    startGame(false); waveIdx = 20; cycle = 3;
+    miniFrags.length = 0;
+    armEvent(eventById('data_rush'), 0);
+    updateDirector(1); updateDirector(secsToSteps(0.5));
+    const t0 = miniFrags.length;
+    for (let i = 0; i < 30; i++) updateDirector(1);
+    const grew = miniFrags.length > t0;
+    abortEvent('test');
+    return grew;
+  }));
+  r.t('todos los eventos del catálogo tienen manejador', await p.evaluate(() =>
+    SPACE_EVENTS.every(ev => EVENT_HANDLERS[ev.id] && typeof EVENT_HANDLERS[ev.id].start === 'function')));
+  r.t('un manejador ausente no congela la partida', await p.evaluate(() => {
+    startGame(false); waveIdx = 20;
+    armEvent({ id: 'inexistente', kind: 'bonus', label: 'X', color: '#fff',
+               telegraph: 0.1, duration: 1, cooldownWaves: 1, tags: [] }, 0);
+    updateDirector(1); updateDirector(secsToSteps(0.2));
+    return eventDirector.active === null && state === 'playing';
+  }));
+
   // ── Compatibilidad ─────────────────────────────────────────
   r.t('con movimiento reducido no hay temblor ni pulso de señal', await p.evaluate(() => {
     startGame(false); waveIdx = 8;
