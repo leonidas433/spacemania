@@ -279,7 +279,7 @@ const LS_PREFIX='retro-game-mania.spacemania.';
 // ============================================================
 //  SpaceMania — retro-game-mania
 //  Autor: retro-game-mania project
-//  Versión: 3.2.0
+//  Versión: 3.3.0
 //  Fecha: 2026-09-06
 //  v2.1.0: curva de dificultad progresiva — velocidad y cadencia
 //          de disparo enemigo escalan por wave y ciclo
@@ -292,6 +292,8 @@ const LS_PREFIX='retro-game-mania.spacemania.';
 //  v3.2.0: calidad adaptativa y reservas de objetos, anuncios para
 //          lector de pantalla, hitbox indulgente, formas de bala
 //          enemiga por familia, Ascenso de Flota (prestigio)
+//  v3.3.0: la simulación pasa a depender del tiempo real y no de la
+//          tasa de refresco (ver RELOJ DE SIMULACIÓN)
 // ============================================================
 
 // ── CURVA DE DIFICULTAD PROGRESIVA ──────────────────────────
@@ -567,6 +569,28 @@ let shieldDrop=null, shieldRandomTimer=0;
 let shieldMilestonesReached=new Set();
 let player={x:W/2,y:H-36,speed:5};
 let bullets=[], enemies=[], particles=[], trails=[], starsBack=[], starsFront=[], keys={}, frame=0;
+
+// ── RELOJ DE SIMULACIÓN ──────────────────────────────────────
+// `frame` ya no cuenta refrescos de pantalla: cuenta fotogramas de 60 fps.
+// Cada tick avanza DT = tiempo real transcurrido / 16,67 ms, y todos los
+// desplazamientos y temporizadores se multiplican por DT.
+//   a  60 Hz → DT = 1,00  (idéntico al comportamiento anterior)
+//   a 144 Hz → DT = 0,42  (misma velocidad real, más suave)
+//   a  30 Hz → DT = 2,00  (misma velocidad real, a saltos)
+// DT_MAX acota el paso: por debajo de 20 fps el juego se ralentiza en vez de
+// atravesar colisiones, y una pestaña en segundo plano no provoca un salto.
+const SIM_MS=1000/60, DT_MAX=3;
+let DT=1, _lastTs=0;
+function advanceClock(ts){
+  if(!_lastTs){ _lastTs=ts; DT=1; return; }
+  let d=(ts-_lastTs)/SIM_MS;
+  _lastTs=ts;
+  if(!isFinite(d)||d<0) d=1;
+  DT=Math.min(d,DT_MAX);
+}
+// Acumuladores de eventos periódicos: sustituyen a los `% n === 0` sobre
+// contadores enteros, que dejan de funcionar con incrementos fraccionarios.
+let _ascFireAcc=0, _ascHumAcc=0, _ascHudAcc=0, _ascPartAcc=0;
 let waveClearing=false, playerExploding=false, explosionFrames=0, hitFlash=0;
 let screenShake=0;
 let powerups=[], activePowerups={};
@@ -956,7 +980,7 @@ function spawnBoss(){
 
 function updateBoss(){
   if(!boss||!boss.alive) return;
-  boss.t+=0.02;
+  boss.t+=0.02*DT;
   switch(boss.pattern){
     case 'boss_sweep':
       boss.x=W/2+Math.sin(boss.t)*280;
@@ -970,8 +994,8 @@ function updateBoss(){
     case 'boss_phantom':
       // Se desvanece y teleporta; dispara apuntando al jugador
       boss.alpha=0.35+Math.abs(Math.sin(boss.t*2))*0.65;
-      boss.x+=Math.sin(boss.t*3)*1.5;
-      boss.teleportTimer--;
+      boss.x+=Math.sin(boss.t*3)*1.5*DT;
+      boss.teleportTimer-=DT;
       if(boss.teleportTimer<=0&&boss.graceTimer<=0){
         boss.teleportTimer=150+Math.floor(Math.random()*90);
         spawnParticles(boss.x,boss.y,boss.color,14);
@@ -995,12 +1019,12 @@ function updateBoss(){
   boss.x=Math.max(boss.size,Math.min(W-boss.size,boss.x));
   boss.y=Math.max(40,Math.min(H*0.45,boss.y));
 
-  if(boss.graceTimer>0){ boss.graceTimer--; if(boss.flashTimer>0) boss.flashTimer--; return; }
+  if(boss.graceTimer>0){ boss.graceTimer-=DT; if(boss.flashTimer>0) boss.flashTimer-=DT; return; }
 
   // Telegraph: 36 frames (~0.6 s) antes de disparar, con aviso sonoro una vez por ráfaga
   boss.telegraphing=boss.shootTimer<=36;
   if(boss.telegraphing&&!bossTelegraphSfxDone){ SFX.telegraph(); bossTelegraphSfxDone=true; }
-  boss.shootTimer--;
+  boss.shootTimer-=DT;
   if(boss.shootTimer<=0){
     boss.shootTimer=Math.floor(80*DIFF[difficulty].shootRate);
     bossTelegraphSfxDone=false;
@@ -1018,21 +1042,21 @@ function updateBoss(){
       }
     }
   }
-  boss.ebullets.forEach(b=>{ b.x+=b.vx; b.y+=b.vy; });
+  boss.ebullets.forEach(b=>{ b.x+=b.vx*DT; b.y+=b.vy*DT; });
   boss.ebullets=boss.ebullets.filter(b=>b.y<H+20&&b.x>-20&&b.x<W+20);
-  if(boss.flashTimer>0) boss.flashTimer--;
+  if(boss.flashTimer>0) boss.flashTimer-=DT;
 
   // Minions cuánticos: orbitan al boss y disparan una bala recta
   bossMinions.forEach(m=>{
     if(!m.alive) return;
-    m.ang+=0.03;
+    m.ang+=0.03*DT;
     m.x=boss.x+Math.cos(m.ang)*110; m.y=boss.y+Math.sin(m.ang)*45+20;
     m.x=Math.max(20,Math.min(W-20,m.x));
-    m.shootTimer--;
+    m.shootTimer-=DT;
     if(m.shootTimer<=0){ m.shootTimer=Math.floor(110*DIFF[difficulty].shootRate); m.ebullets.push({x:m.x,y:m.y+12,vx:0,vy:3.5}); }
-    m.ebullets.forEach(b=>{ b.x+=b.vx; b.y+=b.vy; });
+    m.ebullets.forEach(b=>{ b.x+=b.vx*DT; b.y+=b.vy*DT; });
     m.ebullets=m.ebullets.filter(b=>b.y<H+20);
-    if(m.flashTimer>0) m.flashTimer--;
+    if(m.flashTimer>0) m.flashTimer-=DT;
   });
   bossMinions=bossMinions.filter(m=>m.alive);
 }
@@ -1234,7 +1258,7 @@ function updateTrails(){
   let w=0, lastCol=null, lastA=-1;
   for(let i=0;i<trails.length;i++){
     const t=trails[i];
-    t.life--;
+    t.life-=DT;
     if(t.life<=0){ if(trailPool.length<260) trailPool.push(t); continue; }
     // Alpha cuantizado: las estelas nacidas juntas comparten estado
     const a=Math.round((t.life/t.maxLife)*0.45*16)/16;
@@ -1292,7 +1316,7 @@ function drawPlayer(){
     if(shieldFlash>0){
       cx.globalAlpha=shieldFlash/10*.7; cx.strokeStyle='#fff'; cx.lineWidth=4;
       cx.beginPath(); cx.arc(player.x,player.y-2,26,0,Math.PI*2); cx.stroke();
-      shieldFlash--;
+      shieldFlash-=DT;
     }
   }
   // Speed trail aura
@@ -1301,7 +1325,7 @@ function drawPlayer(){
     cx.beginPath(); cx.arc(player.x,player.y,22,0,Math.PI*2); cx.stroke();
   }
   cx.restore(); cx.shadowBlur=0;
-  hitFlash=Math.max(0,hitFlash-1);
+  hitFlash=Math.max(0,hitFlash-DT);
 }
 
 function drawExplosion(x,y,f){
@@ -1493,7 +1517,7 @@ function updateParticles(){
   let w=0, lastCol=null, lastA=-1;
   for(let i=0;i<particles.length;i++){
     const p=particles[i];
-    p.x+=p.vx; p.y+=p.vy; p.vy+=.09; p.life--;
+    p.x+=p.vx*DT; p.y+=p.vy*DT; p.vy+=.09*DT; p.life-=DT;
     if(p.life<=0){ if(particlePool.length<340) particlePool.push(p); continue; }
     const a=Math.round(p.life/p.maxLife*16)/16;
     if(a!==lastA){ cx.globalAlpha=a; lastA=a; }
@@ -1512,7 +1536,7 @@ function applyShake(){
     const dx=(Math.random()-.5)*screenShake*2;
     const dy=(Math.random()-.5)*screenShake*2;
     cx.translate(dx,dy);
-    screenShake=Math.max(0,screenShake-0.8);
+    screenShake=Math.max(0,screenShake-0.8*DT);
   }
 }
 
@@ -1536,8 +1560,8 @@ function drawEBullet(b,shape){
 
 // ── MOVIMIENTO ENEMIGOS ──────────────────────────────────────
 function movePattern(e){
-  e.t+=.025*e.speed;
-  e.age++;
+  e.t+=.025*e.speed*DT;
+  e.age+=DT;
   // Singularity: crece si no se mata rápido (20 → 34 px en ~10 s)
   if(e.special==='grow') e.size=Math.min(34,20+e.age/45);
   switch(e.pattern){
@@ -1762,6 +1786,7 @@ function updateAscensionHUD(){
 }
 function startAscension(){
   ascensionActive=true; ascensionTimer=ASC_DURATION; ascensionsThisRun++;
+  _ascFireAcc=0; _ascHumAcc=0; _ascHudAcc=0; _ascPartAcc=0;
   showAnnounce('wave','✦ ASCENSIÓN DIGITAL ✦','#c6f');
   announce('Ascensión activada. Diez segundos de disparo automático');
   SFX.ascendOn(); screenFlash(0.7); screenShake=Math.max(screenShake,6);
@@ -1785,27 +1810,32 @@ function endAscension(silent){
   updateAscensionHUD();
 }
 function updateAscension(){
-  if(overclockTimer>0){ overclockTimer--; if(overclockTimer===0) addFloat(player.x,player.y-50,'OVERCLOCK OFF','#aaa'); }
+  if(overclockTimer>0){ overclockTimer=Math.max(0,overclockTimer-DT); if(overclockTimer===0) addFloat(player.x,player.y-50,'OVERCLOCK OFF','#aaa'); }
   if(!ascensionActive) return;
-  ascensionTimer--;
+  ascensionTimer-=DT;
   if(ascensionTimer<=0){ endAscension(false); return; }
-  if(ascensionTimer%ASC_AUTOFIRE===0&&!playerExploding) fireBullet({silent:true});
-  if(ascensionTimer%30===0) SFX.ascendHum();
+  _ascFireAcc+=DT;
+  if(_ascFireAcc>=ASC_AUTOFIRE){ _ascFireAcc-=ASC_AUTOFIRE; if(!playerExploding) fireBullet({silent:true}); }
+  _ascHumAcc+=DT;
+  if(_ascHumAcc>=30){ _ascHumAcc-=30; SFX.ascendHum(); }
   if(!reducedMotion){
     screenShake=Math.max(screenShake,1.2);
-    if(frame%3===0) pushParticle({x:player.x+(Math.random()-.5)*50,y:player.y+(Math.random()-.5)*30,vx:(Math.random()-.5)*1.5,vy:-1-Math.random()*2,life:30,color:'#c6f'});
+    _ascPartAcc+=DT;
+    if(_ascPartAcc>=3){ _ascPartAcc-=3; pushParticle({x:player.x+(Math.random()-.5)*50,y:player.y+(Math.random()-.5)*30,vx:(Math.random()-.5)*1.5,vy:-1-Math.random()*2,life:30,color:'#c6f'}); }
   }
   // Aura: enemigos dentro del radio acumulan exposición y mueren a los 75 frames
   enemies.forEach(e=>{
     if(!e.alive) return;
     const dx=e.x-player.x, dy=e.y-player.y;
     if(dx*dx+dy*dy<ASC_AURA_RADIUS*ASC_AURA_RADIUS){
-      e.auraDmg++;
-      if(e.auraDmg%15===0) pushParticle({x:e.x,y:e.y,vx:(Math.random()-.5),vy:-1,life:20,color:'#c6f'});
+      e.auraDmg+=DT;
+      e.auraFx=(e.auraFx||0)+DT;
+      if(e.auraFx>=15){ e.auraFx-=15; pushParticle({x:e.x,y:e.y,vx:(Math.random()-.5),vy:-1,life:20,color:'#c6f'}); }
       if(e.auraDmg>=ASC_AURA_KILL_FRAMES) killEnemy(e,{cause:'aura'});
     }
   });
-  if(ascensionTimer%6===0) updateAscensionHUD(); // escritura DOM cada 6 frames basta para la barra
+  _ascHudAcc+=DT;
+  if(_ascHudAcc>=6){ _ascHudAcc-=6; updateAscensionHUD(); } // la barra no necesita más de 10 escrituras por segundo
 }
 // Flash de pantalla (DOM, respeta reduced motion)
 function screenFlash(alpha){
@@ -2453,8 +2483,11 @@ function sampleFps(ts){
 }
 function loop(ts){
   requestAnimationFrame(loop);
+  // El reloj avanza siempre, también en menú y en pausa: así el primer tick
+  // tras reanudar no arrastra todo el tiempo transcurrido.
+  if(ts) advanceClock(ts);
   if(state!=='playing'||paused) return;
-  frame++;
+  frame+=DT;
   if(ts) sampleFps(ts);
 
   cx.save();
@@ -2467,14 +2500,14 @@ function loop(ts){
   let lastStar=null;
   for(let i=0;i<starsBack.length;i+=step){
     const s=starsBack[i];
-    if(!reducedMotion){ s.y+=s.sp; if(s.y>H) s.y=0; }
+    if(!reducedMotion){ s.y+=s.sp*DT; if(s.y>H) s.y=0; }
     if(s.c!==lastStar){ cx.fillStyle=s.c; lastStar=s.c; }
     cx.fillRect(s.x,s.y,s.s,s.s);
   }
   cx.fillStyle='rgba(200,230,255,0.6)';
   for(let i=0;i<starsFront.length;i++){
     const s=starsFront[i];
-    if(!reducedMotion){ s.y+=s.sp; if(s.y>H) s.y=0; }
+    if(!reducedMotion){ s.y+=s.sp*DT; if(s.y>H) s.y=0; }
     cx.fillRect(s.x,s.y,s.s,s.s);
   }
 
@@ -2482,8 +2515,8 @@ function loop(ts){
   if(!playerExploding){
     readGamepad();
     const spd=player.speed*(activePowerups.speed?1.9:1)*(overclockTimer>0?1.3:1);
-    if(keys['ArrowLeft']||keys['a']) player.x=Math.max(22,player.x-spd);
-    if(keys['ArrowRight']||keys['d']) player.x=Math.min(W-22,player.x+spd);
+    if(keys['ArrowLeft']||keys['a']) player.x=Math.max(22,player.x-spd*DT);
+    if(keys['ArrowRight']||keys['d']) player.x=Math.min(W-22,player.x+spd*DT);
     playerVel=Math.abs(player.x-lastPlayerX); lastPlayerX=player.x;
     const moving=playerVel>2.5;
     addTrail(player.x,player.y+10,ascensionActive?'#c6f':activeSynergy?SYNERGIES[activeSynergy].color:'#4af',4);
@@ -2492,38 +2525,39 @@ function loop(ts){
     // Guiar balas con teclado (no las guiadas ni las del abanico)
     bullets.forEach(b=>{
       if(!b.guided&&!b.fan){
-        if(keys['ArrowLeft']) b.x=Math.max(4,b.x-2.5);
-        if(keys['ArrowRight']) b.x=Math.min(W-4,b.x+2.5);
+        if(keys['ArrowLeft']) b.x=Math.max(4,b.x-2.5*DT);
+        if(keys['ArrowRight']) b.x=Math.min(W-4,b.x+2.5*DT);
       }
     });
 
     // RÁFAGA DE ASALTO (speed+double): balas automáticas extra al moverse rápido
     if(activeSynergy==='double+speed'){
-      assaultTimer--;
+      assaultTimer-=DT;
       if(moving&&assaultTimer<=0){ assaultTimer=20; bullets.push(newBullet(player.x,player.y-18,{vy:-10,color:'#8ff'})); playTone(1000,'square',0.03,0.05,0.003); }
     }
     // Ráfaga (burst): abanico periódico; TORMENTA MÓVIL lo acelera al moverse
     if(activePowerups.burst){
-      burstTimer--;
+      burstTimer-=DT;
       const interval=(activeSynergy==='burst+speed'&&moving)?45:90;
       if(burstTimer<=0){ burstTimer=interval; fireBurst(); }
     }
 
     // Timers
-    shieldRandomTimer--;
+    shieldRandomTimer-=DT;
     if(shieldRandomTimer<=0&&!shieldDrop&&!shieldActive){ spawnShieldDrop(); resetShieldTimer(); }
-    powerupDropTimer--;
+    powerupDropTimer-=DT;
     if(powerupDropTimer<=0&&powerups.length<2){ spawnPowerupDrop(); resetPowerupTimer(); }
 
     // Combo timer
     if(comboTimer>0){
-      if(comboTimer===1&&combo>=3) playTone(220,'sine',0.12,0.06);
-      comboTimer--;
-      if(comboTimer===0){ combo=0; comboMult=1; updateComboHUD(); }
+      const prevCombo=comboTimer;
+      comboTimer-=DT;
+      if(prevCombo>1&&comboTimer<=1&&combo>=3) playTone(220,'sine',0.12,0.06);
+      if(comboTimer<=0){ comboTimer=0; combo=0; comboMult=1; updateComboHUD(); }
     }
     document.getElementById('combo-bar').style.width=combo>=3?(comboTimer/comboMaxFrames()*100)+'%':'0%';
   } else {
-    explosionFrames++;
+    explosionFrames+=DT;
     if(explosionFrames>58) finishExplosion();
   }
 
@@ -2538,12 +2572,12 @@ function loop(ts){
       if(b.targetRef){
         const dx=b.targetRef.x-b.x, dy=b.targetRef.y-b.y;
         const len=Math.sqrt(dx*dx+dy*dy)||1;
-        b.vx+=(dx/len)*turn; b.vy+=(dy/len)*turn*0.6;
+        b.vx+=(dx/len)*turn*DT; b.vy+=(dy/len)*turn*0.6*DT;
         const sp=Math.sqrt(b.vx*b.vx+b.vy*b.vy)||1;
         b.vx=(b.vx/sp)*b.speed; b.vy=(b.vy/sp)*b.speed;
       } else { b.vx=0; b.vy=-9; }
     }
-    b.x+=b.vx; b.y+=b.vy;
+    b.x+=b.vx*DT; b.y+=b.vy*DT;
     // Overclock Total: rebote lateral una vez
     if(b.bounces>0&&(b.x<4||b.x>W-4)){ b.bounces--; b.vx=-b.vx; b.x=Math.max(4,Math.min(W-4,b.x)); spawnParticles(b.x,b.y,'#fff',3); }
   });
@@ -2561,8 +2595,8 @@ function loop(ts){
     movePattern(e);
     drawShape(e.x,e.y,e.shape,e.color,e.size);
     const diff=DIFF[difficulty];
-    e.shootTimer--;
-    if(e.special==='grow'&&e.size>26) e.shootTimer--; // Singularity crecida: dispara el doble de rápido
+    e.shootTimer-=DT;
+    if(e.special==='grow'&&e.size>26) e.shootTimer-=DT; // Singularity crecida: dispara el doble de rápido
     if(e.shootTimer<=0){
       e.shootTimer=enemyShootTimer(waveIdx, cycle, diff.shootRate);
       const vy=enemyBulletSpeed(waveIdx, cycle, diff.enemySpeedMult)*(e.special==='grow'?e.size/20:1);
@@ -2575,7 +2609,7 @@ function loop(ts){
     cx.save();
     if(!LOW_FX){ cx.shadowBlur=4; cx.shadowColor=bc; }
     cx.fillStyle=bc;
-    e.ebullets.forEach(b=>{ b.x+=b.vx; b.y+=b.vy; drawEBullet(b,e.bshape); });
+    e.ebullets.forEach(b=>{ b.x+=b.vx*DT; b.y+=b.vy*DT; drawEBullet(b,e.bshape); });
     cx.restore();
   });
 
@@ -2583,20 +2617,25 @@ function loop(ts){
   if(isBossWave){ updateBoss(); drawBoss(); }
 
   // Drops
-  if(shieldDrop){ shieldDrop.y+=shieldDrop.vy; if(shieldDrop.y>H+30){ shieldDrop=null; resetShieldTimer(); } else drawShape(shieldDrop.x,shieldDrop.y,'shield_pickup','#4af',22); }
-  powerups.forEach((pu,i)=>{ pu.y+=pu.vy; if(pu.y>H+30) powerups.splice(i,1); else drawPowerupItem(pu); });
+  if(shieldDrop){ shieldDrop.y+=shieldDrop.vy*DT; if(shieldDrop.y>H+30){ shieldDrop=null; resetShieldTimer(); } else drawShape(shieldDrop.x,shieldDrop.y,'shield_pickup','#4af',22); }
+  // Recorrido hacia atrás: splice() dentro de forEach() se saltaba el siguiente
+  for(let i=powerups.length-1;i>=0;i--){
+    const pu=powerups[i];
+    pu.y+=pu.vy*DT;
+    if(pu.y>H+30) powerups.splice(i,1); else drawPowerupItem(pu);
+  }
   miniFrags=miniFrags.filter(mf=>mf.y<H+20);
-  miniFrags.forEach(mf=>{ mf.t+=0.05; mf.y+=mf.vy; mf.x+=Math.sin(mf.t)*0.6; drawShape(mf.x,mf.y,'minifrag','#c6f',10); });
+  miniFrags.forEach(mf=>{ mf.t+=0.05*DT; mf.y+=mf.vy*DT; mf.x+=Math.sin(mf.t)*0.6*DT; drawShape(mf.x,mf.y,'minifrag','#c6f',10); });
   // Bits de datos absorbidos hacia la nave
   dataBits=dataBits.filter(d=>d.life>0);
-  dataBits.forEach(d=>{ d.life--; const p=1-d.life/14; const x=d.x+(player.x-d.x)*p, y=d.y+(player.y-d.y)*p; cx.globalAlpha=1-p*0.6; cx.fillStyle='#c6f'; cx.fillRect(x-2,y-2,4,4); });
+  dataBits.forEach(d=>{ d.life-=DT; const p=1-d.life/14; const x=d.x+(player.x-d.x)*p, y=d.y+(player.y-d.y)*p; cx.globalAlpha=1-p*0.6; cx.fillStyle='#c6f'; cx.fillRect(x-2,y-2,4,4); });
   cx.globalAlpha=1;
 
   // Trails, partículas, jugador, balas
   updateTrails();
   updateParticles();
   floatingTexts=floatingTexts.filter(ft=>ft.life>0);
-  floatingTexts.forEach(ft=>{ ft.y+=ft.vy; ft.life--; cx.save(); cx.globalAlpha=ft.life/ft.maxLife; cx.fillStyle=ft.color; cx.font='bold 10px Courier New'; cx.textAlign='center'; cx.textBaseline='middle'; cx.fillText(ft.text,ft.x,ft.y); cx.restore(); });
+  floatingTexts.forEach(ft=>{ ft.y+=ft.vy*DT; ft.life-=DT; cx.save(); cx.globalAlpha=ft.life/ft.maxLife; cx.fillStyle=ft.color; cx.font='bold 10px Courier New'; cx.textAlign='center'; cx.textBaseline='middle'; cx.fillText(ft.text,ft.x,ft.y); cx.restore(); });
   drawPlayer();
   drawBullets();
   checkCollisions();
@@ -2608,7 +2647,7 @@ function loop(ts){
   if(runModifier&&runModifier.id==='gravity_flux') drain*=1.2;
   if(ascensionActive) drain*=0.5;
   if(playerExploding) drain=0; // sin drenaje mientras la nave explota (evita muerte en cadena a energía 0)
-  energy-=drain;
+  energy-=drain*DT;
   if(energy<=0){ energy=0; playerHit(); }
   document.getElementById('energy-inner').style.width=Math.max(0,energy)+'%';
 }

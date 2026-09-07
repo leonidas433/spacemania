@@ -1,6 +1,6 @@
 # SpaceMania 🚀
 
-**retro-game-mania · 2026 Edition · v3.2.0**
+**retro-game-mania · 2026 Edition · v3.3.0**
 
 Un shooter arcade de ciencia ficción inspirado en los clásicos de los 80.  
 Combate oleadas de objetos del mundo digital moderno en una pesadilla espacial.
@@ -151,6 +151,21 @@ Cada tipo de enemigo derrotado se cataloga con sprite y lore. Completarla da +5%
 
 ---
 
+## ⏱ Reloj de simulación
+El juego corre a la misma velocidad en cualquier pantalla.
+
+Hasta la v3.2 la simulación avanzaba un paso por refresco, así que un monitor de
+144 Hz iba 2,4 veces más rápido que uno de 60 Hz: nave, balas, cadencia enemiga,
+combo, energía y temporizadores de jefe, todo.
+
+Desde la v3.3, cada paso se multiplica por el tiempo real transcurrido,
+normalizado a 60 fps. A 60 Hz el factor vale exactamente 1, así que el balance
+calibrado sigue siendo el mismo. El paso está acotado a tres para que un
+dispositivo lento se ralentice en lugar de atravesar colisiones, y para que
+volver de una pestaña en segundo plano no provoque un salto.
+
+---
+
 ## ⚡ Rendimiento
 El juego apunta a 60 fps y mide su propio ritmo.
 
@@ -215,10 +230,10 @@ npm install && npx playwright install chromium
 npm test
 ```
 
-85 comprobaciones en seis suites: sintaxis del archivo único, tabla de puntuaciones,
-contador de visitas, tutorial, calidad adaptativa y accesibilidad, y escalado del
-lienzo. Tardan unos doce segundos y corren en cada push vía GitHub Actions.
-Detalle en `tests/README.md`.
+98 comprobaciones en siete suites: sintaxis del archivo único, reloj de simulación,
+tabla de puntuaciones, contador de visitas, tutorial, calidad adaptativa y
+accesibilidad, y escalado del lienzo. Tardan unos veinte segundos y corren en cada
+push vía GitHub Actions. Detalle en `tests/README.md`.
 
 ---
 
@@ -260,6 +275,7 @@ Archivo estático dentro del vhost Plesk de webdoctor.es (`/var/www/vhosts/webdo
 | 3.0.0 | 2026-09-06 | Data Fragments + Hangar, sinergias, Ascensión, near-miss, waves 9-12, 2 bosses nuevos, modificadores, Daily, Galería, juice |
 | 3.1.0 | 2026-09-06 | Balance tras playtest (economía de fragments, cadencia, Ascensión, drops, boss cada 2 ciclos) + top 20 con nombre de jugador |
 | 3.2.0 | 2026-09-07 | Calidad adaptativa y reservas de objetos, anuncios para lector de pantalla, hitbox indulgente, formas de bala enemiga, Ascenso de Flota, licencia MIT |
+| 3.3.0 | 2026-09-07 | La simulación deja de depender de la tasa de refresco; suite de pruebas y CI dentro del repositorio |
 
 ---
 

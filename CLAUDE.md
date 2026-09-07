@@ -6,7 +6,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 SpaceMania is a single-file HTML5 canvas arcade shooter. All code — CSS, HTML, and JavaScript — lives in `index.html` (≈2030 lines). There is no build system, no package manager, and no external dependencies. The game uses the Web Audio API for all sound.
 
-**Current version:** 3.2.0. Plans in `spacemania-plan/`: balance pass in `08-PLAYTEST-BALANCE-2026-09-06.md`, audit response in `09-PLAN-AUDITORIA-v3.2.md` (both fully implemented). Licensed MIT.
+**Current version:** 3.3.0. Plans in `spacemania-plan/`: balance pass in `08-PLAYTEST-BALANCE-2026-09-06.md`, audit response in `09-PLAN-AUDITORIA-v3.2.md` (both fully implemented). Licensed MIT.
 
 ## Running locally
 
@@ -107,7 +107,7 @@ Background fill → stars (back layer → front layer) → player movement + bur
 
 ## Tests
 
-`npm test` runs `tests/run.mjs`: six suites, 85 checks, about twelve seconds, non-zero exit on failure. GitHub Actions runs them on every push (`.github/workflows/ci.yml`). Add a check to the matching suite whenever you change behaviour; `tests/README.md` documents each one. `tests/tools/` holds the balance bot and the refresh-rate probe, which are manual because they take minutes.
+`npm test` runs `tests/run.mjs`: seven suites, 98 checks, about twenty seconds, non-zero exit on failure. GitHub Actions runs them on every push (`.github/workflows/ci.yml`). Add a check to the matching suite whenever you change behaviour; `tests/README.md` documents each one. `tests/tools/` holds the balance bot and the refresh-rate probe, which are manual because they take minutes.
 
 The `syntax` suite guards three architecture invariants and will fail loudly if they are broken: the renderer stays Canvas 2D with no WebGL, there are no external dependencies, and the hot arrays are never rebuilt per frame.
 
@@ -115,6 +115,8 @@ The `syntax` suite guards three architecture invariants and will fail loudly if 
 
 - **Do not split into multiple files.** The single-file design is intentional — the game deploys as one asset with no server-side routing.
 - **No framework, no bundler.** Keep it vanilla JS + Canvas 2D + Web Audio API.
+- **The simulation is time-based, not frame-based.** `frame` counts 60fps-normalised steps, not screen refreshes: each tick advances by `DT` (real elapsed time / 16.67ms, clamped to `DT_MAX`). Every displacement, timer and decay in a per-tick path must be multiplied by `DT` — `x += v*DT`, `timer -= DT`. At 60Hz `DT` is exactly 1, so all existing constants and the calibrated balance are unchanged.
+- **Never write `% n === 0` on a timer.** Fractional steps skip the exact value. Use an accumulator instead: `acc += DT; if (acc >= n) { acc -= n; … }`, and reset it where the owning state starts (see `_ascFireAcc` and friends in `startAscension()`).
 - **60fps is the performance target.** `LOW_FX` (see the `CALIDAD ADAPTATIVA` section) is the quality switch: true on coarse pointers, narrow screens, reduced motion, or after two seconds under 45fps. Gate every `shadowBlur` in a per-frame path behind `!LOW_FX`, and read `maxParticles()` / `maxTrails()` instead of hardcoding caps.
 - **No per-frame array rebuilds.** Bullets, particles and trails compact in place and return objects to `bulletPool` / `particlePool` / `trailPool`. Use `newBullet()` + `releaseBullet()` / `clearBullets()`, `pushParticle()` / `spawnParticles()` / `clearParticles()`. Never assign `bullets=[]` or `particles=[]` directly.
 - **Canvas transform is owned by `applyCanvasScale()`.** It sets `C.width`/`C.height` to the device pixel ratio (1 under `LOW_FX`, capped at 2) and installs the base transform. Nothing else may call `setTransform` on the main context.

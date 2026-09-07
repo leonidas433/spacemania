@@ -26,6 +26,7 @@ export default async function run(r) {
   r.t('las partículas vuelven a la reserva al morir',
     await p.evaluate(() => {
       startGame(false);
+      DT = 1;                       // paso fijo: esto prueba la reserva, no el reloj
       for (let i = 0; i < 30; i++) spawnParticles(100, 100, '#fff', 10);
       const before = particles.length;
       for (let i = 0; i < 60; i++) updateParticles();

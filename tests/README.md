@@ -18,6 +18,7 @@ Devuelve código distinto de cero si algo falla, así que sirve tal cual en CI.
 | Suite | Qué cubre |
 |---|---|
 | `syntax` | Parseo del archivo único, etiquetas, metadatos e invariantes de arquitectura. No necesita navegador |
+| `clock` | Que la velocidad del juego dependa del tiempo real y no de la tasa de refresco |
 | `scores` | Top 20 con nombre, migración del formato antiguo, guardado al morir, casos límite de la tabla |
 | `visits` | Contador de visitas contra un servidor simulado: cifra, animación, fallo del servidor, movimiento reducido |
 | `tutorial` | Regresión de la primera partida: los enemigos del tutorial deben morir y dar paso a la oleada 1 |
