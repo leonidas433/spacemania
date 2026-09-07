@@ -133,6 +133,13 @@ body.rm #visits .dot,body.rm #visits .odo span.spin{animation:none;}
 /* F15 */
 .rm-btn{background:transparent;border:1px solid #4af;color:#4af;font-family:'Courier New',monospace;font-size:10px;letter-spacing:1px;padding:4px 10px;border-radius:4px;cursor:pointer;margin-top:8px;}
 .rm-btn:hover{background:#4af;color:#050510;}
+/* ── v4 · PACING / DIRECTOR HUD ── */
+#director-hud{font-size:8px;color:#4f6b88;letter-spacing:1px;text-align:right;min-height:12px;opacity:.9;}
+#director-hud.signal{color:#ff6;text-shadow:0 0 6px rgba(255,238,102,.45);}
+#director-hud.hot{color:#f84;text-shadow:0 0 6px rgba(255,132,68,.4);}
+@keyframes directorPulse{0%,100%{opacity:.45}50%{opacity:1}}
+#director-hud.signal{animation:directorPulse 1s infinite;}
+body.rm #director-hud{animation:none!important;}
 /* ── v3.0 · META-PROGRESIÓN / HANGAR ── */
 .pu-pierce{background:#1a0d00;color:#fa4;border:1px solid #553;}
 .pu-burst{background:#1a0800;color:#f84;border:1px solid #543;}
@@ -266,6 +273,7 @@ body.rm *{animation:none!important;}
     </div>
     <div style="display:flex;flex-direction:column;align-items:flex-end;gap:1px;">
       <div id="wave-name">WAVE 1 · SMARTPHONES</div>
+      <div id="director-hud" aria-live="polite"></div>
       <div id="frag-display">◈ 0</div>
     </div>
   </div>
@@ -294,7 +302,7 @@ const LS_PREFIX='retro-game-mania.spacemania.';
 //          enemiga por familia, Ascenso de Flota (prestigio)
 //  v3.3.0: la simulación pasa a depender del tiempo real y no de la
 //          tasa de refresco (ver RELOJ DE SIMULACIÓN)
-//  v4.0.0: Event Director. Una capa de decisión sobre las oleadas con
+//  v4.0.0: Event Director + pacing director. Una capa de decisión sobre las oleadas con
 //          10 eventos, papeles de pacing, dos rutas, tres secretos,
 //          objetivos ocultos y anticipación del boss
 // ============================================================
@@ -844,6 +852,59 @@ let lastGamepadPause=false;
 //
 // Todo el tiempo se mide en pasos de simulación (60 = 1 s) y avanza con DT.
 const V4_DEBUG=false;
+
+// ── V4 · PACING POLISH ─────────────────────────────────────
+// La dirección no solo decide eventos: hace perceptible la intención de la wave.
+// Se anuncia el estado del ciclo, pero el evento concreto permanece oculto hasta
+// su telegraph. Así se crea anticipación sin convertir la partida en un guion.
+const V4_PACING={
+  intro:{text:'SEÑAL ESTABLE',tone:'calm'},
+  mastery:{text:'MANTÉN EL RITMO',tone:'calm'},
+  escalation:{text:'PRESIÓN EN AUMENTO',tone:'warm'},
+  event:{text:'SEÑAL INESTABLE',tone:'signal'},
+  combination:{text:'LA SEÑAL SE RAMIFICA',tone:'signal'},
+  relief:{text:'VENTANA DE CALMA',tone:'calm'},
+  climax:{text:'ALGO VIENE',tone:'hot'},
+  pre_boss:{text:'PRESENCIA DETECTADA',tone:'hot'},
+};
+function pacingBeatForWave(){ return V4_PACING[currentWaveRole()]||null; }
+function showPacingBeat(){
+  const d=eventDirector;
+  if(!d||state!=='playing'||d.pacingWave===waveIdx) return;
+  d.pacingWave=waveIdx;
+  const beat=pacingBeatForWave();
+  const el=document.getElementById('director-hud');
+  if(el){el.textContent=beat?beat.text:'';el.className=beat?beat.tone:'';}
+  if(!beat|| (beat.tone!=='signal'&&beat.tone!=='hot')) return;
+  showAnnounce('wave',beat.text,beat.tone==='hot'?'#f84':'#ff6');
+  announce(beat.text);
+}
+function updateDirectorHud(){
+  const d=eventDirector,el=document.getElementById('director-hud');
+  if(!d||!el) return;
+  const a=d.active;
+  if(a&&a.phase==='telegraph'){
+    el.textContent=(a.def.kind==='threat'?'⚠ ':'')+'SIGNAL // '+a.def.kind.toUpperCase();
+    el.className=a.def.kind==='threat'?'hot':'signal';
+    return;
+  }
+  if(a&&a.phase==='armed'){
+    el.textContent='SIGNAL // ?  '+(a.timer/60<1.1?'IMMINENTE':'DETECTADA');
+    el.className='signal';
+    return;
+  }
+  const beat=pacingBeatForWave();
+  el.textContent=beat?beat.text:'';
+  el.className=beat?beat.tone:'';
+}
+function drawDirectorAtmosphere(){
+  const d=eventDirector;
+  if(!d||!d.active||d.active.phase!=='armed') return;
+  const p=reducedMotion?0.12:0.18+0.12*Math.sin(frame*0.11);
+  cx.save();cx.globalAlpha=p;cx.strokeStyle='#ff6';cx.lineWidth=1;
+  cx.beginPath();cx.moveTo(W*0.35,7);cx.lineTo(W*0.65,7);cx.stroke();cx.restore();
+}
+
 const V4_DIRECTOR={
   firstEventWave:2,        // no hay eventos antes de esta wave absoluta
   minGapWaves:2,           // waves mínimas entre eventos
@@ -1059,7 +1120,7 @@ function planWaveEvent(){
   const forced=d.pityCounter>=V4_DIRECTOR.pityAfterWaves;
   if(!forced){
     // Probabilidad base modulada por cuánto tiempo lleva sin pasar nada
-    const p=Math.min(0.82,(0.18+0.14*d.wavesSinceEvent)*currentRoute().eventBias);
+    const role=currentWaveRole(); const baseByRole={event:0.52,climax:0.36,combination:0.28,escalation:0.18,relief:0.10}; const base=baseByRole[role]??0.14; const p=Math.min(0.88,(base+0.10*d.wavesSinceEvent)*currentRoute().eventBias);
     if(dRnd()>p) return null;
   }
   const def=pickEvent(ctx);
@@ -1072,7 +1133,7 @@ function planWaveEvent(){
 // ── V4 · CICLO DE VIDA DEL EVENTO ────────────────────────────
 function armEvent(def,delay){
   const d=eventDirector;
-  d.active={ def, phase:'armed', timer:delay||0, data:{}, telegraphed:false };
+  d.active={ def, phase:'armed', timer:delay||0, data:{}, telegraphed:false }; d.forecast={kind:def.kind,tags:def.tags||[]};
   if(V4_DEBUG) console.debug('[V4 EVENT] armed',{id:def.id,wave:waveIdx,cycle,seed:d.seed});
 }
 
@@ -1080,6 +1141,7 @@ function startEventTelegraph(a){
   a.phase='telegraph';
   a.timer=secsToSteps(a.def.telegraph);
   a.telegraphed=true;
+  if(eventDirector) eventDirector.forecast=null;
   // Un secreto anunciado deja de serlo: entra sin texto, solo con su presencia
   if(a.def.silent){ playTone(240,'sine',0.2,0.05,0.02); return; }
   const threat=a.def.kind==='threat';
@@ -1123,7 +1185,7 @@ function resolveEvent(outcome){
   d.cooldownWaves=V4_DIRECTOR.minGapWaves;
   d.wavesSinceEvent=0; d.pityCounter=0;
   if(a.def.kind==='threat') d.threatsThisCycle++;
-  d.active=null;
+  d.active=null; d.forecast=null; d.lastOutcome=outcome;
   if(V4_DEBUG) console.debug('[V4 EVENT] resolve',{id:a.def.id,outcome});
 }
 
@@ -1158,6 +1220,8 @@ function cleanupEventEntities(eventId){
 // ── V4 · ACTUALIZACIÓN POR TICK ──────────────────────────────
 function updateDirector(dt){
   const d=eventDirector; if(!d||state!=='playing') return;
+  showPacingBeat();
+  updateDirectorHud();
   d.sampleAcc+=dt;
   if(d.sampleAcc>=15){ d.sampleAcc-=15; sampleIntensity(); }   // 4 muestras/s
 
@@ -1630,10 +1694,10 @@ function routeEnemySpeed(){ return currentRoute().enemySpeed; }
 // Se evalúa al terminar una oleada. Dos vías: curiosidad o pericia.
 function evaluateRoute(){
   const d=eventDirector; if(!d||d.route!=='alpha') return;
-  const bySecret=d.routeFlags.transmissions>=3;
+  const bySecret=d.routeFlags.transmissions>=2;
   // Umbrales altos a propósito: si Eclipse sale en toda partida deja de ser un
   // descubrimiento y pasa a ser el juego normal.
-  const bySkill=maxComboRun>=18||d.routeFlags.nearStreakBest>=12;
+  const bySkill=maxComboRun>=14||d.routeFlags.nearStreakBest>=8;
   if(!bySecret&&!bySkill) return;
   d.route='eclipse';
   d.routeFlags.enteredAt=waveIdx;
@@ -3742,6 +3806,7 @@ function loop(ts){
   cx.globalAlpha=1;
 
   drawEventTelegraph();   // v4: la señal se dibuja sobre la escena, bajo el jugador
+  drawDirectorAtmosphere();
 
   // Trails, partículas, jugador, balas
   updateTrails();
