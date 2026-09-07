@@ -8,7 +8,7 @@
 <link rel="canonical" href="https://webdoctor.es/spacemania/">
 <meta name="theme-color" content="#02020e">
 <link rel="icon" href="favicon.svg" type="image/svg+xml">
-<link rel="apple-touch-icon" href="favicon.svg">
+<link rel="apple-touch-icon" href="apple-touch-icon.png">
 <meta property="og:type" content="website">
 <meta property="og:site_name" content="WebDoctor">
 <meta property="og:title" content="SpaceMania · juego arcade de naves gratis online">
@@ -17,11 +17,13 @@
 <meta property="og:image" content="https://webdoctor.es/spacemania/og-image.png">
 <meta property="og:image:width" content="1200">
 <meta property="og:image:height" content="630">
+<meta property="og:image:alt" content="Nave de SpaceMania sobre un fondo espacial oscuro con el titulo del juego">
 <meta property="og:locale" content="es_ES">
 <meta name="twitter:card" content="summary_large_image">
 <meta name="twitter:title" content="SpaceMania · juego arcade de naves gratis online">
 <meta name="twitter:description" content="Esquiva, dispara y sobrevive oleadas en esta pesadilla espacial retro. Gratis, en el navegador.">
 <meta name="twitter:image" content="https://webdoctor.es/spacemania/og-image.png">
+<meta name="twitter:image:alt" content="Nave de SpaceMania sobre un fondo espacial oscuro con el titulo del juego">
 <script type="application/ld+json">
 {"@context":"https://schema.org","@type":"VideoGame","name":"SpaceMania","alternateName":"SpaceMania — A Space Nightmare","url":"https://webdoctor.es/spacemania/","image":"https://webdoctor.es/spacemania/og-image.png","description":"Juego arcade de naves espaciales gratuito que se juega en el navegador, en móvil y ordenador, sin instalar ni registrarse.","inLanguage":"es","genre":["Arcade","Shoot 'em up"],"gamePlatform":["Web browser","Desktop","Mobile"],"applicationCategory":"GameApplication","operatingSystem":"Any (HTML5)","offers":{"@type":"Offer","price":"0","priceCurrency":"EUR","availability":"https://schema.org/InStock"},"author":{"@type":"Organization","name":"WebDoctor","url":"https://webdoctor.es/"},"publisher":{"@type":"Organization","name":"WebDoctor","url":"https://webdoctor.es/"}}
 </script>
@@ -212,10 +214,13 @@ body.rm #director-hud{animation:none!important;}
 /* Reduced motion: sin animaciones CSS parpadeantes (body.rm lo pone toggleReducedMotion) */
 body.rm *{animation:none!important;}
 @media(prefers-reduced-motion:reduce){*{animation:none!important;}}
+#about{max-width:800px;width:100%;margin:20px auto 10px;padding:0 16px;color:#68a;font-family:'Courier New',monospace;font-size:12px;line-height:1.65;}
+#about h1{color:#4af;font-size:14px;letter-spacing:2px;margin-bottom:10px;font-weight:bold;}
+#about p{margin-bottom:8px;}
+#about strong{color:#7788aa;}
 </style>
 </head>
 <body>
-<h1 class="sr-only">SpaceMania: juego arcade de naves espaciales, gratis y sin instalar</h1>
 <div id="game-container">
   <div id="header">
     <span class="title">✦ SPACEMANIA ✦</span>
@@ -304,10 +309,10 @@ body.rm *{animation:none!important;}
 <div id="sr-live" class="sr-only" role="status" aria-live="polite" aria-atomic="true"></div>
 <div id="visits" aria-live="polite"><span class="dot"></span><span>SEÑALES INTERCEPTADAS</span><span class="odo" id="visits-odo"></span></div>
 
-<section id="about" style="max-width:800px;width:100%;margin:20px auto 10px;padding:0 16px;color:#68a;font-family:'Courier New',monospace;font-size:12px;line-height:1.65;">
-<h2 style="color:#4af;font-size:14px;letter-spacing:2px;margin-bottom:10px;">SpaceMania, un arcade de naves para el navegador</h2>
-<p style="margin-bottom:8px;">SpaceMania es un juego de naves espaciales de estilo arcade. Es gratis, no pide registro y no hay que instalar nada: se abre en el navegador y funciona igual en el móvil que en el ordenador. Mueves la nave, disparas y aguantas oleadas de enemigos que llegan sin descanso. La nave resiste tres impactos, recoges escudos y potenciadores, encadenas combos y cada pocos ciclos aparece un jefe. Cuanto más lejos llegas, más rápido va todo.</p>
-<p><strong style="color:#7788aa;">Cómo se juega:</strong> muévete con las flechas o el ratón y dispara con espacio o clic. Si te mueves mientras disparas, guías el misil en vuelo. En el móvil, desliza para mover y toca para disparar. Pulsa ESC para pausar.</p>
+<section id="about">
+<h1>SpaceMania, un arcade de naves para el navegador</h1>
+<p>SpaceMania es un juego de naves espaciales de estilo arcade. Es gratis, no pide registro y no hay que instalar nada: se abre en el navegador y funciona igual en el móvil que en el ordenador. Mueves la nave, disparas y aguantas oleadas de enemigos que llegan sin descanso. La nave resiste tres impactos, recoges escudos y potenciadores, encadenas combos y cada pocos ciclos aparece un jefe. Cuanto más lejos llegas, más rápido va todo.</p>
+<p><strong>Cómo se juega:</strong> muévete con las flechas o el ratón y dispara con espacio o clic. Si te mueves mientras disparas, guías el misil en vuelo. En el móvil, desliza para mover y toca para disparar. Pulsa ESC para pausar.</p>
 </section>
 
 <script>
