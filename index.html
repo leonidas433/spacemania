@@ -3,15 +3,18 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<!-- Google tag (gtag.js) -->
-<script async src="https://www.googletagmanager.com/gtag/js?id=G-98DJ7JVHYD"></script>
+<!-- Google tag (gtag.js) con Consent Mode v2 (RGPD/ePrivacy) -->
 <script>
   window.dataLayer = window.dataLayer || [];
   function gtag(){dataLayer.push(arguments);}
+  // Sin consentimiento no se activan cookies de analítica ni de anuncios
+  gtag('consent', 'default', {ad_storage:'denied', ad_user_data:'denied', ad_personalization:'denied', analytics_storage:'denied', wait_for_update:500});
+  // Respeta una decisión previa (compartida con webdoctor.es: mismo origen)
+  try{var _c=JSON.parse(localStorage.getItem('wd_cookie_consent'));if(_c&&_c.choice==='accept'){gtag('consent','update',{ad_storage:'granted',ad_user_data:'granted',ad_personalization:'granted',analytics_storage:'granted'});}}catch(e){}
   gtag('js', new Date());
-
   gtag('config', 'G-98DJ7JVHYD');
 </script>
+<script async src="https://www.googletagmanager.com/gtag/js?id=G-98DJ7JVHYD"></script>
 <title>SpaceMania · juego arcade de naves gratis online</title>
 <meta name="description" content="Juego arcade de naves espaciales gratis, sin instalar y sin registro. Esquiva, dispara y aguanta oleadas en una pesadilla espacial retro. Juega en el navegador.">
 <link rel="canonical" href="https://webdoctor.es/spacemania/">
@@ -227,6 +230,16 @@ body.rm *{animation:none!important;}
 #about h1{color:#4af;font-size:14px;letter-spacing:2px;margin-bottom:10px;font-weight:bold;}
 #about p{margin-bottom:8px;}
 #about strong{color:#7788aa;}
+#sm-privacy-notice{position:fixed;left:0;right:0;bottom:0;z-index:9999;display:none;flex-direction:column;gap:10px;max-width:820px;margin:0 auto 14px;padding:14px 16px;background:#0a0a25;border:1px solid #1a1a4a;border-radius:10px;color:#8899bb;font-family:'Courier New',monospace;font-size:12px;line-height:1.55;box-shadow:0 0 30px rgba(0,0,0,.6);}
+#sm-privacy-notice.open{display:flex;}
+#sm-privacy-notice a{color:#4af;}
+.sm-privacy-actions{display:flex;gap:10px;flex-wrap:wrap;}
+.sm-privacy-btn{flex:1 1 140px;padding:9px 16px;border-radius:6px;font-family:'Courier New',monospace;font-size:12px;font-weight:bold;letter-spacing:1px;cursor:pointer;border:1px solid #4af;}
+.sm-privacy-btn.accept{background:#4af;color:#050510;}
+.sm-privacy-btn.reject{background:transparent;color:#4af;}
+.legal-links{margin:6px 0 16px;font-family:'Courier New',monospace;font-size:10px;color:#334;text-align:center;}
+.legal-links a,.legal-links button{color:#68a;background:none;border:none;font:inherit;cursor:pointer;text-decoration:none;padding:0 6px;}
+.legal-links a:hover,.legal-links button:hover{color:#4af;}
 </style>
 </head>
 <body>
@@ -315,6 +328,7 @@ body.rm *{animation:none!important;}
   </div>
 </div>
 <footer class="credits">SPACEMANIA · retro-game-mania · 2026 · inspired by classic arcade shooters<span style="border:1px solid #445;padding:1px 5px;font-size:8px;color:#737b99;border-radius:2px;margin-left:8px;" title="Autodeclaración del autor. Sin compras, sin publicidad, sin datos personales.">APTO PARA TODAS LAS EDADES</span></footer>
+<nav class="legal-links"><a href="/aviso-legal/">Aviso legal</a><a href="/privacidad/">Privacidad</a><a href="/cookies/">Cookies</a><button type="button" onclick="smPrivacy.open()">Preferencias de privacidad</button></nav>
 <div id="sr-live" class="sr-only" role="status" aria-live="polite" aria-atomic="true"></div>
 <div id="visits" aria-live="polite"><span class="dot"></span><span>SEÑALES INTERCEPTADAS</span><span class="odo" id="visits-odo"></span></div>
 
@@ -323,6 +337,26 @@ body.rm *{animation:none!important;}
 <p>SpaceMania es un juego de naves espaciales de estilo arcade. Es gratis, no pide registro y no hay que instalar nada: se abre en el navegador y funciona igual en el móvil que en el ordenador. Mueves la nave, disparas y aguantas oleadas de enemigos que llegan sin descanso. La nave resiste tres impactos, recoges escudos y potenciadores, encadenas combos y cada pocos ciclos aparece un jefe. Cuanto más lejos llegas, más rápido va todo.</p>
 <p><strong>Cómo se juega:</strong> muévete con las flechas o el ratón y dispara con espacio o clic. Si te mueves mientras disparas, guías el misil en vuelo. En el móvil, desliza para mover y toca para disparar. Pulsa ESC para pausar.</p>
 </section>
+
+<div id="sm-privacy-notice" role="dialog" aria-label="Privacidad y cookies">
+<p>Usamos cookies de analítica (Google Analytics) para saber cómo se juega. Solo se activan si las aceptas; puedes rechazarlas y seguir jugando igual. Más información en la <a href="/cookies/">política de cookies</a> y la <a href="/privacidad/">política de privacidad</a>.</p>
+<div class="sm-privacy-actions">
+<button type="button" class="sm-privacy-btn accept" onclick="smPrivacy.choose('accept')">Aceptar</button>
+<button type="button" class="sm-privacy-btn reject" onclick="smPrivacy.choose('reject')">Rechazar</button>
+</div>
+</div>
+<script>
+(function(){
+  var K='wd_cookie_consent', el=document.getElementById('sm-privacy-notice');
+  function apply(c){var g=(c==='accept')?'granted':'denied';if(typeof gtag==='function'){gtag('consent','update',{analytics_storage:g,ad_storage:g,ad_user_data:g,ad_personalization:g});}}
+  window.smPrivacy={
+    choose:function(c){try{localStorage.setItem(K,JSON.stringify({choice:c,ts:Date.now(),v:1}));}catch(e){}if(el)el.classList.remove('open');apply(c);},
+    open:function(){if(el)el.classList.add('open');}
+  };
+  var st=null;try{st=JSON.parse(localStorage.getItem(K));}catch(e){}
+  if(st&&st.choice){apply(st.choice);}else if(el){el.classList.add('open');}
+})();
+</script>
 
 <script>
 const LS_PREFIX='retro-game-mania.spacemania.';
