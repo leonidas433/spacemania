@@ -831,6 +831,523 @@ function readGamepad(){
 }
 let lastGamepadPause=false;
 
+
+// ── V4 · EVENT DIRECTOR: CONFIGURACIÓN Y CATÁLOGO ────────────
+// El director decide QUÉ situación especial puede ocurrir y CUÁNDO. No mueve
+// enemigos fotograma a fotograma: arma eventos que reutilizan las rutas ya
+// existentes (makeEnemy, movePattern, killEnemy, addScore, colisiones, pools).
+//
+// Ciclo de vida:  IDLE → ARMED → TELEGRAPH → ACTIVE → RESOLVE → COOLDOWN
+//
+// Todo el tiempo se mide en pasos de simulación (60 = 1 s) y avanza con DT.
+const V4_DEBUG=false;
+const V4_DIRECTOR={
+  firstEventWave:2,        // no hay eventos antes de esta wave absoluta
+  minGapWaves:2,           // waves mínimas entre eventos
+  pityAfterWaves:4,        // waves sin evento tras las que se garantiza uno
+  maxThreatPerCycle:3,     // techo de eventos de amenaza por ciclo
+  recentMemory:3,          // cuántos ids recuerda para penalizar la repetición
+  reliefIntensity:55,      // por encima de esto se prefiere alivio a amenaza
+  tensionPerNearMiss:2,
+  tensionDecayPerWave:12,
+  minGapWavesAfterEvent:2, // separación objetivo entre eventos
+  armDelayMin:40,          // 0,7 s: el evento no salta a la vez que la oleada
+  armDelayMax:150,         // 2,5 s. Una oleada dura ~9 s, el evento debe caber
+};
+
+// Duraciones en segundos; se convierten a pasos con secsToSteps().
+const SPACE_EVENTS=[
+  { id:'courier', kind:'bonus', label:'MENSAJERO DE DATOS', color:'#ff6',
+    minCycle:1, minWave:2, weight:10, intensity:8,
+    telegraph:0.7, duration:6, cooldownWaves:2, canRepeat:false,
+    tags:['skill','reward'] },
+  { id:'precision_drill', kind:'bonus', label:'BLANCOS DE PRECISIÓN', color:'#4ff',
+    minCycle:1, minWave:3, weight:9, intensity:14,
+    telegraph:0.5, duration:7, cooldownWaves:2, canRepeat:false,
+    tags:['skill','reward'] },
+  { id:'leech', kind:'threat', label:'PARÁSITO DE SEÑAL', color:'#f84',
+    minCycle:1, minWave:4, weight:8, intensity:34,
+    telegraph:0.9, duration:9, cooldownWaves:3, canRepeat:false,
+    tags:['priority','threat'] },
+];
+function eventById(id){ return SPACE_EVENTS.find(e=>e.id===id)||null; }
+function secsToSteps(s){ return s*60; }
+
+// Motivos sonoros de evento. Cortos y reconocibles; no son música nueva.
+const SFX_V4={
+  signal(){   [740,988].forEach((f,i)=>setTimeout(()=>playTone(f,'sine',0.1,0.09),i*110)); },
+  bonus(){    [659,880,1175].forEach((f,i)=>setTimeout(()=>playTone(f,'square',0.09,0.11),i*70)); },
+  threat(){   playTone(98,'sawtooth',0.3,0.16,0.01); setTimeout(()=>playTone(87,'sawtooth',0.26,0.13),180); },
+  reward(){   [880,1175,1568,2093].forEach((f,i)=>setTimeout(()=>playTone(f,'sine',0.11,0.13),i*60)); },
+  escape(){   [500,380,290].forEach((f,i)=>setTimeout(()=>playTone(f,'sine',0.12,0.08),i*90)); },
+  discovery(){ [1046,1318,1046,1568].forEach((f,i)=>setTimeout(()=>playTone(f,'triangle',0.14,0.11),i*130)); },
+};
+
+// ── V4 · ESTADO DEL DIRECTOR ─────────────────────────────────
+let eventDirector=null;
+let v4Metrics=null;
+function newV4Metrics(){ return { eventsById:{}, started:0, completed:0, missed:0, aborted:0, maxIntensity:0, wavesWithoutEvent:0 }; }
+function newEventDirector(seed){
+  const s=seed>>>0;
+  return {
+    seed:s, rng:mulberry32(s),
+    intensity:0, tension:0,
+    lastEventId:null, recentEvents:[],
+    cooldownWaves:0, wavesSinceEvent:0, pityCounter:0,
+    eventCooldowns:{},                 // id → waves restantes
+    threatsThisCycle:0, cycleTracked:1,
+    active:null,                       // {def, phase, timer, data}
+    history:[],
+    route:'alpha', routeFlags:{},
+    sampleAcc:0,
+    stats:{shown:0,completed:0,missed:0,aborted:0},
+  };
+}
+function resetDirector(seed){ eventDirector=newEventDirector(seed); v4Metrics=newV4Metrics(); }
+function dRnd(){ return eventDirector?eventDirector.rng():Math.random(); }
+
+// ── V4 · CONTEXTO DE DECISIÓN ────────────────────────────────
+// Función pura: el director no lee estado global disperso desde cada regla.
+function buildDirectorContext(){
+  const d=eventDirector;
+  return {
+    state, wave:(waveIdx%WAVE_COUNT)+1, waveAbs:waveIdx, cycle,
+    score, combo, comboMult, maxCombo:maxComboRun,
+    shipHp, shieldHp, energy,
+    ascensionActive, overclock:overclockTimer>0,
+    powerups:activePowerupIds(), synergy:activeSynergy,
+    nearMisses, enemiesAlive:enemies.length,
+    isBossWave, isTutorial:isTutorialWave,
+    intensity:d?d.intensity:0, tension:d?d.tension:0,
+    route:d?d.route:'alpha',
+    runModifier, dailyMode, dailyChallenge,
+  };
+}
+
+// Presión real de la escena, 0-100. No es daño: es carga de atención.
+function sampleIntensity(){
+  const d=eventDirector; if(!d) return;
+  let bullets=0;
+  for(let i=0;i<enemies.length;i++) bullets+=enemies[i].ebullets.length;
+  if(boss&&boss.alive) bullets+=boss.ebullets.length;
+  let v=Math.min(40,enemies.length*2.2)+Math.min(35,bullets*2.4);
+  if(isBossWave) v+=25;
+  if(d.active&&d.active.phase==='active') v+=d.active.def.intensity;
+  if(shipHp<=1) v+=10;
+  // Suavizado: la intensidad es una sensación, no un salto por frame
+  d.intensity=Math.round(d.intensity*0.6+Math.min(100,v)*0.4);
+  if(v4Metrics) v4Metrics.maxIntensity=Math.max(v4Metrics.maxIntensity,d.intensity);
+}
+
+// ── V4 · SELECCIÓN ───────────────────────────────────────────
+// Vetos duros: contexto en el que ningún evento debe entrar.
+function directorVeto(ctx){
+  if(!eventDirector) return 'no-director';
+  if(ctx.state!=='playing') return 'not-playing';
+  if(ctx.isTutorial) return 'tutorial';
+  if(ctx.isBossWave) return 'boss';
+  if(playerExploding) return 'player-exploding';
+  if(eventDirector.active) return 'event-active';
+  if(ctx.waveAbs<V4_DIRECTOR.firstEventWave) return 'too-early';
+  return null;
+}
+
+// Peso final de un evento en el contexto dado. 0 = no elegible.
+function eventWeight(def,ctx){
+  const d=eventDirector;
+  if(ctx.cycle<def.minCycle) return 0;
+  if(ctx.waveAbs<def.minWave) return 0;
+  if((d.eventCooldowns[def.id]||0)>0) return 0;
+  if(d.lastEventId===def.id&&!def.canRepeat) return 0;
+  let w=def.weight;
+  if(d.recentEvents.includes(def.id)) w*=0.35;
+  // Alivio: con la escena cargada, la amenaza pierde peso y el bonus lo gana
+  if(def.kind==='threat'){
+    if(d.threatsThisCycle>=V4_DIRECTOR.maxThreatPerCycle) return 0;
+    if(d.intensity>V4_DIRECTOR.reliefIntensity) w*=0.2;
+    if(ctx.shipHp<=1) w*=0.3;
+    if(ctx.ascensionActive) w*=0.25;      // no encadenar caos sobre el clímax
+  } else if(def.kind==='bonus'){
+    if(d.intensity>V4_DIRECTOR.reliefIntensity) w*=1.6;
+  }
+  // Maestría: jugar bien inclina hacia eventos de habilidad, nunca hacia castigo
+  if(def.tags.includes('skill')){
+    if(ctx.comboMult>=8) w*=1.4;
+    if(d.tension>=30) w*=1.25;
+  }
+  return Math.max(0,w);
+}
+
+function pickEvent(ctx){
+  const pool=[];
+  let total=0;
+  for(const def of SPACE_EVENTS){
+    const w=eventWeight(def,ctx);
+    if(w>0){ pool.push({def,w}); total+=w; }
+  }
+  if(!pool.length) return null;
+  let r=dRnd()*total;
+  for(const p of pool){ r-=p.w; if(r<=0) return p.def; }
+  return pool[pool.length-1].def;
+}
+
+// Se llama una vez al empezar cada wave. No decide nada por frame.
+function planWaveEvent(){
+  const d=eventDirector; if(!d) return null;
+  const ctx=buildDirectorContext();
+  const veto=directorVeto(ctx);
+  if(veto){ if(V4_DEBUG) console.debug('[V4] veto',veto); return null; }
+  if(d.cooldownWaves>0) return null;
+
+  const forced=d.pityCounter>=V4_DIRECTOR.pityAfterWaves;
+  if(!forced){
+    // Probabilidad base modulada por cuánto tiempo lleva sin pasar nada
+    const p=Math.min(0.7,0.18+0.14*d.wavesSinceEvent);
+    if(dRnd()>p) return null;
+  }
+  const def=pickEvent(ctx);
+  if(!def) return null;
+  const delay=V4_DIRECTOR.armDelayMin+dRnd()*(V4_DIRECTOR.armDelayMax-V4_DIRECTOR.armDelayMin);
+  armEvent(def,delay);
+  return def;
+}
+
+// ── V4 · CICLO DE VIDA DEL EVENTO ────────────────────────────
+function armEvent(def,delay){
+  const d=eventDirector;
+  d.active={ def, phase:'armed', timer:delay||0, data:{}, telegraphed:false };
+  if(V4_DEBUG) console.debug('[V4 EVENT] armed',{id:def.id,wave:waveIdx,cycle,seed:d.seed});
+}
+
+function startEventTelegraph(a){
+  a.phase='telegraph';
+  a.timer=secsToSteps(a.def.telegraph);
+  a.telegraphed=true;
+  const threat=a.def.kind==='threat';
+  showAnnounce('shield',threat?'⚠ SEÑAL HOSTIL':'⚠ SEÑAL DETECTADA',a.def.color);
+  (threat?SFX_V4.threat:SFX_V4.signal)();
+  announce(threat?'Señal hostil detectada':'Señal detectada');
+}
+
+function beginEventAction(a){
+  const d=eventDirector;
+  const h=EVENT_HANDLERS[a.def.id];
+  if(!h||!h.start){ abortEvent('missing-handler'); return; }
+  a.phase='active';
+  a.timer=secsToSteps(a.def.duration);
+  try{ h.start(a,buildDirectorContext()); }
+  catch(err){ if(V4_DEBUG) console.debug('[V4] start failed',err); abortEvent('start-threw'); return; }
+  d.stats.shown++;
+  if(v4Metrics){ v4Metrics.started++; v4Metrics.eventsById[a.def.id]=(v4Metrics.eventsById[a.def.id]||0)+1; }
+  showAnnounce('wave',a.def.label,a.def.color);
+  announce('Evento: '+a.def.label);
+  if(!reducedMotion) screenShake=Math.max(screenShake,a.def.kind==='threat'?4:2);
+  if(V4_DEBUG) console.debug('[V4 EVENT] start',{id:a.def.id,wave:waveIdx,cycle,route:d.route,seed:d.seed});
+}
+
+// Cierra el evento activo. `outcome` es 'completed' | 'missed' | 'timeout'.
+function resolveEvent(outcome){
+  const d=eventDirector; const a=d&&d.active; if(!a) return;
+  const h=EVENT_HANDLERS[a.def.id];
+  try{ if(h&&h.resolve) h.resolve(a,outcome,buildDirectorContext()); }catch(err){}
+  cleanupEventEntities(a.def.id);
+  const ok=outcome==='completed';
+  d.stats[ok?'completed':'missed']++;
+  if(v4Metrics) v4Metrics[ok?'completed':'missed']++;
+  d.history.push({id:a.def.id,wave:waveIdx,cycle,outcome});
+  d.lastEventId=a.def.id;
+  d.recentEvents.push(a.def.id);
+  while(d.recentEvents.length>V4_DIRECTOR.recentMemory) d.recentEvents.shift();
+  d.eventCooldowns[a.def.id]=a.def.cooldownWaves;
+  d.cooldownWaves=V4_DIRECTOR.minGapWaves;
+  d.wavesSinceEvent=0; d.pityCounter=0;
+  if(a.def.kind==='threat') d.threatsThisCycle++;
+  d.active=null;
+  if(V4_DEBUG) console.debug('[V4 EVENT] resolve',{id:a.def.id,outcome});
+}
+
+// Salida limpia sin recompensa: cambio de wave, boss, game over o error.
+function abortEvent(reason){
+  const d=eventDirector; const a=d&&d.active; if(!a) return;
+  const h=EVENT_HANDLERS[a.def.id];
+  try{ if(h&&h.abort) h.abort(a,reason); }catch(err){}
+  cleanupEventEntities(a.def.id);
+  d.stats.aborted++;
+  if(v4Metrics) v4Metrics.aborted++;
+  // Un evento abortado sigue contando para la anti-repetición: si no, el
+  // director volvía a elegir el mismo en cuanto cambiaba la oleada.
+  const seen=a.phase==='active'||a.telegraphed;
+  d.lastEventId=a.def.id;
+  d.recentEvents.push(a.def.id);
+  while(d.recentEvents.length>V4_DIRECTOR.recentMemory) d.recentEvents.shift();
+  d.eventCooldowns[a.def.id]=seen?Math.max(1,a.def.cooldownWaves-1):1;
+  if(seen){ d.cooldownWaves=V4_DIRECTOR.minGapWaves; d.wavesSinceEvent=0; d.pityCounter=0; }
+  d.active=null;
+  if(V4_DEBUG) console.debug('[V4 EVENT] abort',{id:a.def.id,reason});
+}
+
+// Ningún enemigo de evento debe sobrevivir a su evento.
+function cleanupEventEntities(eventId){
+  for(let i=0;i<enemies.length;i++){
+    const e=enemies[i];
+    if(e.ephemeral&&(!eventId||e.eventId===eventId)){ e.alive=false; e.ebullets.length=0; }
+  }
+}
+
+// ── V4 · ACTUALIZACIÓN POR TICK ──────────────────────────────
+function updateDirector(dt){
+  const d=eventDirector; if(!d||state!=='playing') return;
+  d.sampleAcc+=dt;
+  if(d.sampleAcc>=15){ d.sampleAcc-=15; sampleIntensity(); }   // 4 muestras/s
+
+  const a=d.active; if(!a) return;
+  a.timer-=dt;
+  if(a.phase==='armed'){
+    if(a.timer<=0) startEventTelegraph(a);
+    return;
+  }
+  if(a.phase==='telegraph'){
+    if(a.timer<=0) beginEventAction(a);
+    return;
+  }
+  // active
+  const h=EVENT_HANDLERS[a.def.id];
+  if(h&&h.update){
+    try{ h.update(a,dt); }catch(err){ abortEvent('update-threw'); return; }
+  }
+  if(d.active&&a.timer<=0) resolveEvent(h&&h.timeoutOutcome?h.timeoutOutcome(a):'missed');
+}
+
+// Fin de wave: envejecer cooldowns y contadores. No decide eventos aquí.
+function directorWaveEnd(){
+  const d=eventDirector; if(!d) return;
+  if(d.active) abortEvent('wave-change');
+  if(d.cooldownWaves>0) d.cooldownWaves--;
+  for(const k in d.eventCooldowns) if(d.eventCooldowns[k]>0) d.eventCooldowns[k]--;
+  d.wavesSinceEvent++;
+  d.pityCounter++;
+  d.tension=Math.max(0,d.tension-V4_DIRECTOR.tensionDecayPerWave);
+  if(cycle!==d.cycleTracked){ d.cycleTracked=cycle; d.threatsThisCycle=0; }
+  if(v4Metrics&&d.wavesSinceEvent>0) v4Metrics.wavesWithoutEvent=Math.max(v4Metrics.wavesWithoutEvent,d.wavesSinceEvent);
+}
+
+// El near-miss alimenta al director: una esquiva es una acción con futuro.
+function directorNearMiss(){
+  const d=eventDirector; if(!d) return;
+  d.tension=Math.min(100,d.tension+V4_DIRECTOR.tensionPerNearMiss);
+}
+
+// Un enemigo de evento ha muerto: el handler decide qué significa.
+function directorEnemyKilled(e){
+  const d=eventDirector; const a=d&&d.active; if(!a||!e.ephemeral) return;
+  if(e.eventId!==a.def.id) return;
+  const h=EVENT_HANDLERS[a.def.id];
+  if(h&&h.onKill){ try{ h.onKill(a,e); }catch(err){} }
+}
+
+// ── V4 · HELPERS DE EVENTO ───────────────────────────────────
+// Enemigo de evento: misma fábrica, mismas colisiones, misma ruta de muerte.
+// `ephemeral` lo excluye del recuento de wave y de la Galería de oleadas.
+function spawnEventEnemy(spec){
+  const w=WAVES.find(x=>x.shape===spec.shape)||WAVES[0];
+  const e=makeEnemy(w,spec.x,spec.y);
+  e.bx=spec.x; e.by=spec.y;
+  e.ephemeral=true; e.eventId=spec.eventId;
+  e.shootTimer=spec.shootTimer!=null?spec.shootTimer:1e9;   // por defecto, no dispara
+  if(spec.props) Object.assign(e,spec.props);
+  enemies.push(e);
+  return e;
+}
+// ¿Queda algún enemigo de oleada? Los de evento no retienen el wave clear.
+function waveEnemiesAlive(){
+  for(let i=0;i<enemies.length;i++) if(!enemies[i].ephemeral) return true;
+  return false;
+}
+
+// Marca visual de los enemigos de evento: anillo + color propio.
+// Legible sin depender del color (el anillo es la señal) y sin sombras en LOW_FX.
+function drawEventMark(e,col){
+  cx.save();
+  cx.globalAlpha=reducedMotion?0.5:0.35+Math.sin(frame*0.18)*0.18;
+  cx.strokeStyle=col||'#ff6'; cx.lineWidth=1.6;
+  cx.beginPath(); cx.arc(e.x,e.y,e.size*0.95+4,0,Math.PI*2); cx.stroke();
+  cx.restore();
+}
+
+// Telegraph en canvas: banda superior pulsante mientras dura la señal.
+function drawEventTelegraph(){
+  const a=eventDirector&&eventDirector.active;
+  if(!a||a.phase!=='telegraph') return;
+  const total=secsToSteps(a.def.telegraph)||1;
+  const p=1-Math.max(0,a.timer)/total;
+  cx.save();
+  cx.globalAlpha=reducedMotion?0.5:0.3+Math.sin(p*Math.PI*6)*0.22;
+  cx.fillStyle=a.def.color;
+  cx.fillRect(0,0,W*p,3);
+  cx.fillRect(0,H-3,W*p,3);
+  cx.restore();
+}
+
+// ── V4 · EVENTOS ─────────────────────────────────────────────
+// MENSAJERO DE DATOS — bonus de reacción.
+// Cambia: un objetivo veloz cruza la pantalla con un cargamento.
+// Riesgo: ninguno, no dispara. Coste: si escapa, se pierde la recompensa.
+// Señal: 0,7 s. Respuesta: dispararle 3 veces antes de que salga.
+// Premio: puntos altos, power-up garantizado y mini-fragmentos.
+function startCourierEvent(a){
+  const fromLeft=dRnd()<0.5;
+  const e=spawnEventEnemy({
+    shape:'drone', eventId:'courier',
+    x:fromLeft?-30:W+30, y:60+dRnd()*70,
+    props:{ pattern:'courier', dir:fromLeft?1:-1, speed:2.6+cycle*0.12,
+            hp:3, size:18, color:'#ff6', pts:0, courier:true },
+  });
+  a.data.enemy=e; a.data.caught=false;
+}
+function updateCourierEvent(a){
+  const e=a.data.enemy;
+  if(!e||!e.alive) return;
+  if(e.x<-80||e.x>W+80){ e.alive=false; resolveEvent('missed'); }
+}
+function onCourierKill(a){ a.data.caught=true; resolveEvent('completed'); }
+function resolveCourierEvent(a,outcome){
+  const e=a.data.enemy;
+  if(outcome==='completed'&&e){
+    const pts=addScore(400+cycle*120,true);
+    addFloat(e.x,e.y-24,'¡CARGAMENTO! +'+pts,'#ff6');
+    spawnParticles(e.x,e.y,'#ff6',LOW_FX?10:22);
+    for(let i=0;i<4;i++) spawnMiniFrag(e.x+(dRnd()-0.5)*60,e.y+(dRnd()-0.5)*30);
+    if(!isBossWave) spawnPowerupDrop();
+    SFX_V4.reward(); if(!reducedMotion) screenFlash(0.35);
+    announce('Mensajero destruido. Cargamento recuperado');
+    registerDiscovery('courier');
+  } else {
+    addFloat(W/2,H/2-40,'EL MENSAJERO ESCAPÓ','#a96');
+    SFX_V4.escape();
+    announce('El mensajero escapó');
+  }
+}
+
+// BLANCOS DE PRECISIÓN — bonus de puntería.
+// Cambia: tres objetivos pequeños y valiosos flotan sobre la oleada normal.
+// Riesgo: ninguno propio; el coste es la atención que robas a la wave.
+// Señal: 0,5 s. Respuesta: acertarlos antes de que se marchen.
+// Premio: puntos por cada uno y bonus mayor si caen los tres.
+function startPrecisionDrillEvent(a){
+  a.data.total=3; a.data.hit=0; a.data.list=[];
+  for(let i=0;i<3;i++){
+    const e=spawnEventEnemy({
+      shape:'nft', eventId:'precision_drill',
+      x:150+i*250+(dRnd()-0.5)*60, y:110+dRnd()*60,
+      props:{ pattern:'hover', size:12, color:'#4ff', pts:0, speed:0.9 },
+    });
+    a.data.list.push(e);
+  }
+}
+function onPrecisionKill(a,e){
+  a.data.hit++;
+  const pts=addScore(220+cycle*70,true);
+  addFloat(e.x,e.y-18,'+'+pts,'#4ff');
+  SFX_V4.bonus();
+  if(a.data.hit>=a.data.total) resolveEvent('completed');
+}
+function resolvePrecisionEvent(a,outcome){
+  if(outcome==='completed'){
+    const bonus=addScore(600+cycle*150,true);
+    addFloat(player.x,player.y-56,'¡PLENO! +'+bonus,'#4ff');
+    spawnParticles(player.x,player.y-30,'#4ff',LOW_FX?10:20);
+    for(let i=0;i<3;i++) spawnMiniFrag(player.x+(dRnd()-0.5)*80,player.y-40);
+    SFX_V4.reward(); if(!reducedMotion) screenFlash(0.3);
+    announce('Blancos de precisión completados');
+    registerDiscovery('precision_drill');
+  } else if(a.data.hit>0){
+    addFloat(W/2,H/2-40,`BLANCOS ${a.data.hit}/${a.data.total}`,'#48a');
+  }
+}
+
+// PARÁSITO DE SEÑAL — amenaza de prioridad.
+// Cambia: mientras vive, acelera la cadencia de disparo de la oleada.
+// Riesgo: la presión sube y no baja sola. Cambia a quién disparas primero.
+// Señal: 0,9 s más un vínculo visible con cada enemigo potenciado.
+// Respuesta: priorizarlo. Aguanta 4 impactos, no dispara él mismo.
+// Premio: al caer, la oleada vuelve a su cadencia y da puntos y alivio.
+function startLeechEvent(a){
+  const e=spawnEventEnemy({
+    shape:'algo', eventId:'leech',
+    x:120+dRnd()*(W-240), y:70+dRnd()*40,
+    props:{ pattern:'hover', size:22, color:'#f84', pts:0, speed:1.2, hp:4, leech:true },
+  });
+  a.data.enemy=e; a.data.boosted=[];
+  for(let i=0;i<enemies.length;i++){
+    const t=enemies[i];
+    if(t===e||t.ephemeral||!t.alive) continue;
+    t.leeched=true;
+    t.shootTimer=Math.max(12,t.shootTimer*0.45);
+    a.data.boosted.push(t);
+  }
+  announce('Parásito de señal: acelera al enemigo mientras siga vivo');
+}
+function updateLeechEvent(a){
+  const e=a.data.enemy;
+  if(!e||!e.alive) return;
+  // Vínculo visible: sin él la amenaza no sería legible
+  cx.save();
+  cx.globalAlpha=reducedMotion?0.35:0.2+Math.sin(frame*0.2)*0.12;
+  cx.strokeStyle='#f84'; cx.lineWidth=1;
+  cx.beginPath();
+  for(let i=0;i<a.data.boosted.length;i++){
+    const t=a.data.boosted[i];
+    if(!t.alive) continue;
+    cx.moveTo(e.x,e.y); cx.lineTo(t.x,t.y);
+  }
+  cx.stroke();
+  cx.restore();
+}
+function clearLeechBoost(a){
+  const list=a.data.boosted||[];
+  for(let i=0;i<list.length;i++){ list[i].leeched=false; }
+  a.data.boosted=[];
+}
+function onLeechKill(a){ resolveEvent('completed'); }
+function resolveLeechEvent(a,outcome){
+  clearLeechBoost(a);
+  if(outcome==='completed'){
+    const pts=addScore(500+cycle*140,true);
+    addFloat(player.x,player.y-50,'PARÁSITO ELIMINADO +'+pts,'#f84');
+    SFX_V4.reward(); if(!reducedMotion) screenFlash(0.3);
+    announce('Parásito eliminado. La oleada recupera su ritmo');
+    registerDiscovery('leech');
+    // Alivio explícito tras resolver una amenaza
+    eventDirector.intensity=Math.max(0,eventDirector.intensity-25);
+  } else {
+    addFloat(W/2,H/2-40,'EL PARÁSITO SE DESVANECIÓ','#a86');
+    SFX_V4.escape();
+  }
+}
+function abortLeechEvent(a){ clearLeechBoost(a); }
+
+const EVENT_HANDLERS={
+  courier:{ start:startCourierEvent, update:updateCourierEvent, onKill:onCourierKill,
+            resolve:resolveCourierEvent },
+  precision_drill:{ start:startPrecisionDrillEvent, onKill:onPrecisionKill,
+                    resolve:resolvePrecisionEvent },
+  leech:{ start:startLeechEvent, update:updateLeechEvent, onKill:onLeechKill,
+          resolve:resolveLeechEvent, abort:abortLeechEvent },
+};
+
+// ── V4 · DESCUBRIMIENTOS ─────────────────────────────────────
+// Mismo patrón que la Galería de Amenazas: la curiosidad se vuelve progresión.
+let discoveries=new Set(lsArr('discoveries'));
+function saveDiscoveries(){ lsSet('discoveries',[...discoveries]); }
+function registerDiscovery(id){
+  if(discoveries.has(id)) return;
+  discoveries.add(id); saveDiscoveries();
+  const def=eventById(id);
+  showAchievementToastText(`📡 NUEVO REGISTRO: ${def?def.label:id}`);
+  SFX_V4.discovery();
+  announce('Nuevo registro: '+(def?def.label:id));
+}
+
 // ── ESTRELLAS ────────────────────────────────────────────────
 for(let i=0;i<50;i++){
   const sz=Math.random()*0.7+0.3;
@@ -949,6 +1466,7 @@ function spawnWave(){
   }
   showAnnounce('wave',`WAVE ${(waveIdx%WAVE_COUNT)+1}\n${w.name}`,'#ff6');
   document.getElementById('wave-name').textContent=`WAVE ${(waveIdx%WAVE_COUNT)+1} · ${w.name}`;
+  planWaveEvent();   // v4: una única decisión por oleada, nunca por frame
 }
 // Deepfake: al morir genera una copia (solo una vez por linaje)
 function spawnClone(e){
@@ -1573,8 +2091,13 @@ function movePattern(e){
     case 'swarm':      e.x=e.bx+Math.sin(e.t+e.phase)*55+Math.cos(e.t*1.7)*22; e.y=e.by+Math.cos(e.t*.8+e.phase)*32; break;
     case 'swooping':   e.x=e.bx+Math.sin(e.t+e.phase)*95; e.y=e.by+Math.pow(Math.sin(e.t*.4),2)*44; break;
     case 'chaos':      e.x=e.bx+Math.sin(e.t*2.1+e.phase)*65+Math.cos(e.t*1.3)*32; e.y=e.by+Math.sin(e.t*1.7+e.col)*32; break;
+    // v4 — patrones de enemigos de evento
+    case 'courier':    e.x+=e.dir*e.speed*1.6*DT; e.y=e.by+Math.sin(e.age*0.05)*18; break;
+    case 'hover':      e.x=e.bx+Math.sin(e.t*1.1)*44; e.y=e.by+Math.cos(e.t*0.7)*16; break;
   }
-  e.x=Math.max(20,Math.min(W-20,e.x)); e.y=Math.max(12,Math.min(H*.62,e.y));
+  // El mensajero debe poder salir de pantalla: es su forma de escapar
+  if(e.pattern!=='courier') e.x=Math.max(20,Math.min(W-20,e.x));
+  e.y=Math.max(12,Math.min(H*.62,e.y));
 }
 
 // ── HIT AL JUGADOR ───────────────────────────────────────────
@@ -1607,6 +2130,7 @@ function finishExplosion(){
 }
 
 function endGame(){
+  abortEvent('game-over');   // v4: ningún evento sobrevive a la partida
   state='gameover'; stopMusic();
   endAscension(true); clearAllPowerups();
   shotsFiredRun+=shotsFired; shotsHitRun+=Math.min(shotsHit,shotsFired);
@@ -1856,6 +2380,7 @@ function checkNearMiss(b){
     const dx=Math.abs(b.x-player.x);
     if(dx>=10&&dx<NEAR_MISS_DIST){
       nearMisses++;
+      directorNearMiss();   // v4: una esquiva es una acción con futuro
       const pts=5+Math.floor(Math.random()*11);
       addScore(pts,false);
       addAscension(3);
@@ -1905,8 +2430,8 @@ function killEnemy(e,opts){
   if(pts>0&&Math.random()<0.3) addFloat(e.x,e.y+6,'+'+pts,'#ddd');
   SFX.hit();
   energy=Math.min(100,energy+5); checkScoreMilestones(); registerKill();
-  // Galería de Amenazas
-  if(!threatsSeen.has(e.shape)){
+  // Galería de Amenazas: solo familias de oleada, no entidades de evento
+  if(!e.ephemeral&&!threatsSeen.has(e.shape)){
     threatsSeen.add(e.shape); saveThreats();
     showAchievementToastText(`📚 NUEVA AMENAZA: ${(WAVES.find(w=>w.shape===e.shape)||{name:e.shape}).name}`);
     if(threatsSeen.size>=WAVES.length) unlockAchievement('collector');
@@ -1922,6 +2447,7 @@ function killEnemy(e,opts){
     if(!reducedMotion) screenShake=Math.max(screenShake,3);
     addFloat(player.x,player.y-30,'¡EMPUJÓN!','#f4a');
   }
+  directorEnemyKilled(e);   // v4: el handler decide qué significa esta muerte
 }
 // Muerte de una copia del Quantum Algorithm (misma tubería de puntos/juice que un enemigo)
 const MINION_PTS=150;
@@ -1966,8 +2492,10 @@ function checkCollisions(){
       if(Math.abs(b.x-e.x)<hw&&Math.abs(b.y-e.y)<hh){
         impacted=true; shotsHit++;
         const ex=e.x, ey=e.y;
-        killEnemy(e,{cause:'bullet'});
-        if(explode&&b.guided){
+        // v4: un enemigo con blindaje absorbe impactos antes de morir
+        if(e.hp>1){ e.hp--; e.flash=8; SFX.bossHit(); spawnParticles(ex,ey,e.color,LOW_FX?2:5); }
+        else killEnemy(e,{cause:'bullet'});
+        if(explode&&b.guided&&!e.alive){
           spawnParticles(ex,ey,'#c6f',8);
           // Snapshot previo: los clones que genere killEnemy() no deben morir en la misma explosión
           const victims=enemies.filter(o=>o.alive&&o!==e&&(o.x-ex)*(o.x-ex)+(o.y-ey)*(o.y-ey)<40*40);
@@ -2090,10 +2618,11 @@ function checkCollisions(){
   }
 
   enemies=enemies.filter(e=>e.alive);
-  if(!isBossWave&&enemies.length===0&&!waveClearing){ waveClearing=true; SFX.waveCleared(); addFloat(W/2,H/2,'WAVE CLEAR!','#4f4'); const run=sessionStart; setTimeout(()=>{ if(state==='playing'&&sessionStart===run) nextWave(); },1600); }
+  if(!isBossWave&&!waveEnemiesAlive()&&!waveClearing){ waveClearing=true; SFX.waveCleared(); addFloat(W/2,H/2,'WAVE CLEAR!','#4f4'); const run=sessionStart; setTimeout(()=>{ if(state==='playing'&&sessionStart===run) nextWave(); },1600); }
 }
 
 function nextWave(){
+  directorWaveEnd();   // v4: cierra el evento en curso y envejece cooldowns
   waveIdx++;
   if(waveIdx%WAVE_COUNT===0){ cycle++; if(!ascensionActive){ ascensionMax=ascensionThreshold(); updateAscensionHUD(); } }
   if(shotsFired>0&&shotsHit>=shotsFired) unlockAchievement('sniper'); // >=: pierce/burst/autofire generan hits extra
@@ -2334,10 +2863,17 @@ function showGallery(){
     return `<div class="gal-card${seen?'':' locked'}"><canvas width="44" height="44" data-shape="${w.shape}" data-color="${w.color}"></canvas><span class="gal-name" style="color:${w.color}">${seen?w.name:'???'}</span><span class="gal-lore">${seen?THREAT_LORE[w.shape]:'Wave '+(i+1)+' · sin datos'}</span></div>`;
   }).join('');
   const done=threatsSeen.size>=WAVES.length;
+  // v4: las anomalías se catalogan aparte de las familias de oleada
+  const anomalies=SPACE_EVENTS.map(ev=>{
+    const seen=discoveries.has(ev.id);
+    return `<div class="gal-card${seen?'':' locked'}"><span class="gal-name" style="color:${seen?ev.color:'#445'}">${seen?ev.label:'???'}</span><span class="gal-lore">${seen?'Anomalía registrada':'Señal sin catalogar'}</span></div>`;
+  }).join('');
   o.innerHTML=`
     <h2>GALERÍA DE AMENAZAS</h2>
     <p class="sub">${threatsSeen.size} / ${WAVES.length} CATALOGADAS${done?' · +5% FRAGMENTS':''}</p>
     <div class="gallery-grid">${cards}</div>
+    <p class="sub" style="color:#ff6;margin-top:10px;">ANOMALÍAS · ${discoveries.size} / ${SPACE_EVENTS.length}</p>
+    <div class="gallery-grid">${anomalies}</div>
     <button class="ovl-btn" onclick="showMenu()">VOLVER</button>
   `;
   // Sprites: drawShape dibuja sobre el global cx; se redirige a cada mini-canvas
@@ -2425,6 +2961,8 @@ function startGame(daily){
   if(dailyMode){ _prevDifficulty=difficulty; selectDiff('normal'); }
   runModifier=null;
   if(!dailyMode&&(challengeMode||Math.random()<MODIFIER_CHANCE)) runModifier=MODIFIERS[Math.floor(Math.random()*MODIFIERS.length)];
+  // v4: el Daily usa su semilla diaria, así la secuencia de eventos es reproducible
+  resetDirector(dailyMode?(dailyChallenge.seed>>>0):((Date.now()^((Math.random()*0xffffffff)>>>0))>>>0));
 
   // Upgrades del Hangar
   maxShipHp=3+upgLvl('hull');
@@ -2564,6 +3102,9 @@ function loop(ts){
   // Ascensión / Overclock
   updateAscension();
 
+  // v4: el director decide contexto, no mueve entidades
+  updateDirector(DT);
+
   // Balas jugador
   const turn=activeSynergy==='guided+speed'||overclockTimer>0?0.9:0.5; // CAZADOR DE ÉLITE gira más rápido
   bullets.forEach(b=>{
@@ -2593,7 +3134,9 @@ function loop(ts){
   // Enemigos
   enemies.forEach(e=>{
     movePattern(e);
-    drawShape(e.x,e.y,e.shape,e.color,e.size);
+    if(e.flash>0) e.flash-=DT;
+    drawShape(e.x,e.y,e.shape,e.flash>0?'#fff':e.color,e.size);
+    if(e.ephemeral) drawEventMark(e,e.color);
     const diff=DIFF[difficulty];
     e.shootTimer-=DT;
     if(e.special==='grow'&&e.size>26) e.shootTimer-=DT; // Singularity crecida: dispara el doble de rápido
@@ -2630,6 +3173,8 @@ function loop(ts){
   dataBits=dataBits.filter(d=>d.life>0);
   dataBits.forEach(d=>{ d.life-=DT; const p=1-d.life/14; const x=d.x+(player.x-d.x)*p, y=d.y+(player.y-d.y)*p; cx.globalAlpha=1-p*0.6; cx.fillStyle='#c6f'; cx.fillRect(x-2,y-2,4,4); });
   cx.globalAlpha=1;
+
+  drawEventTelegraph();   // v4: la señal se dibuja sobre la escena, bajo el jugador
 
   // Trails, partículas, jugador, balas
   updateTrails();

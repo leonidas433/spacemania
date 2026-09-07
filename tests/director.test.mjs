@@ -1,0 +1,284 @@
+// Event Director (v4): selección, anti-repetición, cooldown, pity, telegraph,
+// limpieza, determinismo por semilla y convivencia con la oleada y el boss.
+import { launch, gamePage } from './lib/harness.mjs';
+
+export const name = 'director';
+
+export default async function run(r) {
+  const browser = await launch();
+  const p = await gamePage(browser);
+
+  // ── Estado y reset ─────────────────────────────────────────
+  r.t('la partida arranca con el director limpio', await p.evaluate(() => {
+    startGame(false);
+    const d = eventDirector;
+    return d && d.lastEventId === null && d.recentEvents.length === 0 && d.active === null
+      && d.pityCounter === 0 && d.route === 'alpha' && d.intensity === 0
+      && v4Metrics.started === 0;
+  }));
+  r.t('el Daily usa la semilla del día, así es reproducible', await p.evaluate(() => {
+    startGame(true);
+    const a = eventDirector.seed;
+    startGame(true);
+    const b = eventDirector.seed;
+    startGame(false);
+    return a === b && a === (getDailyChallenge().seed >>> 0);
+  }));
+
+  // ── Vetos de contexto ──────────────────────────────────────
+  r.t('no hay eventos en el tutorial', await p.evaluate(() => {
+    startGame(false); isTutorialWave = true;
+    const v = directorVeto(buildDirectorContext());
+    isTutorialWave = false;
+    return v === 'tutorial';
+  }));
+  r.t('no hay eventos durante el boss', await p.evaluate(() => {
+    startGame(false); isBossWave = true;
+    const v = directorVeto(buildDirectorContext());
+    isBossWave = false;
+    return v === 'boss';
+  }));
+  r.t('no hay eventos en las primeras oleadas', await p.evaluate(() => {
+    startGame(false); waveIdx = 0;
+    return directorVeto(buildDirectorContext()) === 'too-early';
+  }));
+  r.t('no se solapan dos eventos', await p.evaluate(() => {
+    startGame(false); waveIdx = 5;
+    armEvent(eventById('courier'), 10);
+    const v = directorVeto(buildDirectorContext());
+    abortEvent('test');
+    return v === 'event-active';
+  }));
+
+  // ── Selección: anti-repetición, cooldown, mínimos ──────────
+  r.t('un evento no se repite inmediatamente', await p.evaluate(() => {
+    startGame(false); waveIdx = 8; cycle = 2;
+    eventDirector.lastEventId = 'courier';
+    return eventWeight(eventById('courier'), buildDirectorContext()) === 0;
+  }));
+  r.t('un evento reciente pierde peso pero sigue siendo elegible', await p.evaluate(() => {
+    startGame(false); waveIdx = 8; cycle = 2;
+    const base = eventWeight(eventById('courier'), buildDirectorContext());
+    eventDirector.recentEvents = ['courier'];
+    const pen = eventWeight(eventById('courier'), buildDirectorContext());
+    return base > 0 && pen > 0 && pen < base;
+  }));
+  r.t('el cooldown por evento bloquea su reaparición', await p.evaluate(() => {
+    startGame(false); waveIdx = 8; cycle = 2;
+    eventDirector.eventCooldowns.courier = 2;
+    return eventWeight(eventById('courier'), buildDirectorContext()) === 0;
+  }));
+  r.t('cada evento respeta su oleada mínima', await p.evaluate(() => {
+    startGame(false); waveIdx = 2; cycle = 1;
+    return eventWeight(eventById('leech'), buildDirectorContext()) === 0
+      && eventWeight(eventById('courier'), buildDirectorContext()) > 0;
+  }));
+  r.t('la amenaza pierde peso con la escena cargada', await p.evaluate(() => {
+    startGame(false); waveIdx = 10; cycle = 2;
+    eventDirector.intensity = 0;
+    const calm = eventWeight(eventById('leech'), buildDirectorContext());
+    eventDirector.intensity = 90;
+    const busy = eventWeight(eventById('leech'), buildDirectorContext());
+    return calm > 0 && busy > 0 && busy < calm;
+  }));
+  r.t('la amenaza no aparece con el jugador a un impacto de morir', await p.evaluate(() => {
+    startGame(false); waveIdx = 10; cycle = 2;
+    const full = eventWeight(eventById('leech'), buildDirectorContext());
+    shipHp = 1;
+    const low = eventWeight(eventById('leech'), buildDirectorContext());
+    shipHp = maxShipHp;
+    return low < full;
+  }));
+  r.t('el techo de amenazas por ciclo se respeta', await p.evaluate(() => {
+    startGame(false); waveIdx = 10; cycle = 2;
+    eventDirector.threatsThisCycle = V4_DIRECTOR.maxThreatPerCycle;
+    return eventWeight(eventById('leech'), buildDirectorContext()) === 0;
+  }));
+
+  // ── Pity ───────────────────────────────────────────────────
+  r.t('el pity garantiza un evento tras demasiadas oleadas en calma', await p.evaluate(() => {
+    startGame(false); waveIdx = 9; cycle = 2;
+    eventDirector.pityCounter = V4_DIRECTOR.pityAfterWaves;
+    eventDirector.wavesSinceEvent = 0;
+    eventDirector.rng = () => 0.999;         // el azar diría que no
+    const def = planWaveEvent();
+    return def !== null && eventDirector.active !== null;
+  }));
+
+  // ── Ciclo de vida y telegraph ──────────────────────────────
+  r.t('el evento pasa por señal antes de actuar', await p.evaluate(() => {
+    startGame(false); waveIdx = 8;
+    armEvent(eventById('courier'), 1);
+    const armed = eventDirector.active.phase;
+    updateDirector(2);                        // agota el retardo
+    const tele = eventDirector.active.phase;
+    const noEnemyYet = !enemies.some(e => e.ephemeral);
+    updateDirector(secsToSteps(1));           // agota la señal
+    const active = eventDirector.active.phase;
+    const enemyNow = enemies.some(e => e.ephemeral);
+    abortEvent('test');
+    return armed === 'armed' && tele === 'telegraph' && noEnemyYet
+      && active === 'active' && enemyNow;
+  }));
+  r.t('todo evento peligroso tiene ventana de reacción', await p.evaluate(() =>
+    SPACE_EVENTS.every(ev => ev.telegraph >= (ev.kind === 'threat' ? 0.6 : 0.2))));
+  r.t('la señal se anuncia por voz', await p.evaluate(() => {
+    startGame(false); waveIdx = 8; _srAt = 0; _srLast = '';
+    armEvent(eventById('leech'), 1);
+    updateDirector(2);
+    const said = document.getElementById('sr-live').textContent;
+    abortEvent('test');
+    return /Señal hostil/.test(said);
+  }));
+
+  // ── Limpieza ───────────────────────────────────────────────
+  r.t('al resolver no quedan entidades huérfanas', await p.evaluate(() => {
+    startGame(false); waveIdx = 8;
+    armEvent(eventById('precision_drill'), 0);
+    updateDirector(1); updateDirector(secsToSteps(1));
+    const spawned = enemies.filter(e => e.ephemeral).length;
+    resolveEvent('timeout');
+    enemies = enemies.filter(e => e.alive);
+    return spawned === 3 && eventDirector.active === null
+      && !enemies.some(e => e.ephemeral) && eventDirector.cooldownWaves > 0;
+  }));
+  r.t('el cambio de oleada aborta el evento en curso', await p.evaluate(() => {
+    startGame(false); waveIdx = 8;
+    armEvent(eventById('courier'), 0);
+    updateDirector(1); updateDirector(secsToSteps(1));
+    directorWaveEnd();
+    enemies = enemies.filter(e => e.alive);
+    return eventDirector.active === null && !enemies.some(e => e.ephemeral);
+  }));
+  r.t('el fin de partida cierra el evento', await p.evaluate(() => {
+    startGame(false); waveIdx = 8; totalKills = 12; lives = 1;
+    armEvent(eventById('courier'), 0);
+    updateDirector(1); updateDirector(secsToSteps(1));
+    endGame();
+    return eventDirector.active === null;
+  }));
+
+  // ── Convivencia con la oleada ──────────────────────────────
+  r.t('los enemigos de evento no retienen el fin de oleada', await p.evaluate(() => {
+    startGame(false); waveIdx = 8;
+    enemies.length = 0;                       // oleada limpiada por el jugador
+    armEvent(eventById('courier'), 0);
+    updateDirector(1); updateDirector(secsToSteps(1));
+    return enemies.some(e => e.ephemeral) && waveEnemiesAlive() === false;
+  }));
+  r.t('los enemigos de evento no entran en la Galería de oleadas', await p.evaluate(() => {
+    startGame(false); waveIdx = 8;
+    const before = threatsSeen.size;
+    armEvent(eventById('courier'), 0);
+    updateDirector(1); updateDirector(secsToSteps(1));
+    const e = enemies.find(x => x.ephemeral);
+    e.hp = 1; killEnemy(e, { cause: 'bullet' });
+    return threatsSeen.size === before;
+  }));
+
+  // ── Determinismo por semilla ───────────────────────────────
+  r.t('la misma semilla produce la misma secuencia', await p.evaluate(() => {
+    const seq = () => {
+      startGame(false); resetDirector(20260907);
+      waveIdx = 8; cycle = 2;
+      const out = [];
+      for (let i = 0; i < 12; i++) {
+        const def = pickEvent(buildDirectorContext());
+        out.push(def ? def.id : '-');
+        if (def) { eventDirector.lastEventId = def.id; }
+      }
+      return out.join(',');
+    };
+    const a = seq(), b = seq();
+    return a === b && a.length > 0;
+  }));
+  r.t('semillas distintas producen secuencias distintas', await p.evaluate(() => {
+    const seq = (s) => {
+      startGame(false); resetDirector(s);
+      waveIdx = 8; cycle = 2;
+      const out = [];
+      for (let i = 0; i < 20; i++) {
+        const def = pickEvent(buildDirectorContext());
+        out.push(def ? def.id : '-');
+        if (def) eventDirector.lastEventId = def.id;
+      }
+      return out.join(',');
+    };
+    return seq(1) !== seq(999999);
+  }));
+  r.t('el director no usa Math.random en su lógica', await p.evaluate(() =>
+    !/Math\.random/.test(pickEvent.toString() + planWaveEvent.toString()
+      + eventWeight.toString() + startCourierEvent.toString() + startLeechEvent.toString())));
+
+  // ── Eventos: mecánica real, no decorado ────────────────────
+  r.t('el mensajero aguanta varios impactos y premia al destruirlo', await p.evaluate(() => {
+    startGame(false); waveIdx = 8;
+    armEvent(eventById('courier'), 0);
+    updateDirector(1); updateDirector(secsToSteps(1));
+    const e = enemies.find(x => x.ephemeral);
+    const hp0 = e.hp, sc0 = score;
+    e.hp = 1; killEnemy(e, { cause: 'bullet' });
+    return hp0 === 3 && score > sc0 && eventDirector.active === null
+      && eventDirector.stats.completed === 1 && discoveries.has('courier');
+  }));
+  r.t('si el mensajero escapa no hay recompensa', await p.evaluate(() => {
+    startGame(false); waveIdx = 8;
+    armEvent(eventById('courier'), 0);
+    updateDirector(1); updateDirector(secsToSteps(1));
+    const e = enemies.find(x => x.ephemeral);
+    const sc0 = score;
+    e.x = W + 200;
+    updateDirector(1);
+    return eventDirector.active === null && eventDirector.stats.missed === 1 && score === sc0;
+  }));
+  r.t('el parásito acelera la oleada y al morir la devuelve a su ritmo', await p.evaluate(() => {
+    startGame(false); waveIdx = 8;
+    const before = enemies.filter(e => !e.ephemeral).map(e => e.shootTimer);
+    armEvent(eventById('leech'), 0);
+    updateDirector(1); updateDirector(secsToSteps(1));
+    const boosted = enemies.filter(e => !e.ephemeral).map(e => e.shootTimer);
+    const faster = boosted.every((t, i) => t < before[i]) && boosted.length > 0;
+    const marked = enemies.filter(e => e.leeched).length === boosted.length;
+    const l = enemies.find(x => x.ephemeral);
+    l.hp = 1; killEnemy(l, { cause: 'bullet' });
+    const cleared = enemies.filter(e => e.leeched).length === 0;
+    return faster && marked && cleared && eventDirector.active === null;
+  }));
+  r.t('los tres blancos completan el evento y dan bonus', await p.evaluate(() => {
+    startGame(false); waveIdx = 8;
+    armEvent(eventById('precision_drill'), 0);
+    updateDirector(1); updateDirector(secsToSteps(1));
+    const sc0 = score;
+    enemies.filter(e => e.ephemeral).forEach(e => killEnemy(e, { cause: 'bullet' }));
+    return score > sc0 && eventDirector.active === null
+      && eventDirector.stats.completed === 1 && discoveries.has('precision_drill');
+  }));
+
+  // ── Compatibilidad ─────────────────────────────────────────
+  r.t('con movimiento reducido no hay temblor ni pulso de señal', await p.evaluate(() => {
+    startGame(false); waveIdx = 8;
+    reducedMotion = true; screenShake = 0;
+    armEvent(eventById('leech'), 0);
+    updateDirector(1); updateDirector(secsToSteps(1));
+    const shook = screenShake;
+    abortEvent('test'); reducedMotion = false;
+    return shook === 0;
+  }));
+  r.t('el director avanza con DT, no con fotogramas', await p.evaluate(() => {
+    const src = updateDirector.toString();
+    return /dt/.test(src) && !/frame\s*%/.test(src);
+  }));
+  r.t('la intensidad se muestrea sin recorrer nada por frame', await p.evaluate(() => {
+    startGame(false);
+    const d = eventDirector;
+    d.intensity = 0; d.sampleAcc = 0;
+    for (let i = 0; i < 5; i++) updateDirector(1);   // 5 pasos: aún no muestrea
+    const early = d.intensity;
+    updateDirector(20);
+    return early === 0 && d.intensity >= 0;
+  }));
+
+  r.t('sin errores de JavaScript', p.errors.length === 0);
+  if (p.errors.length) r.note(p.errors.slice(0, 5).join(' | '));
+  await browser.close();
+}

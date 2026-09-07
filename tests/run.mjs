@@ -3,7 +3,7 @@
 //   node tests/run.mjs scores     solo las que coincidan con el filtro
 import { reporter } from './lib/harness.mjs';
 
-const SUITES = ['syntax', 'clock', 'scores', 'visits', 'tutorial', 'quality', 'rendering'];
+const SUITES = ['syntax', 'clock', 'director', 'scores', 'visits', 'tutorial', 'quality', 'rendering'];
 const filter = process.argv.slice(2);
 const chosen = filter.length ? SUITES.filter(s => filter.some(f => s.includes(f))) : SUITES;
 
