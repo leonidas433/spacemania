@@ -240,6 +240,15 @@ body.rm *{animation:none!important;}
 .legal-links{margin:6px 0 16px;font-family:'Courier New',monospace;font-size:10px;color:#334;text-align:center;}
 .legal-links a,.legal-links button{color:#68a;background:none;border:none;font:inherit;cursor:pointer;text-decoration:none;padding:0 6px;}
 .legal-links a:hover,.legal-links button:hover{color:#4af;}
+/* ═══ MOBILE FIX — jugabilidad táctil (2026-09-08) · solo añade, no modifica reglas existentes ═══
+   Problema: en móvil el canvas hacía scroll al arrastrar y el botón FIRE tapaba la nave. */
+html,body{overscroll-behavior:none;}
+@media (hover:none){
+  /* el canvas gestiona el gesto: arrastrar mueve la nave, tocar dispara; sin scroll ni zoom */
+  #gc{touch-action:none;}
+  /* los controles bajan del área de juego para no tapar la nave */
+  #touch-controls{position:static;bottom:auto;margin:10px auto 6px;padding:0 24px;}
+}
 </style>
 </head>
 <body>
